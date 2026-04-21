@@ -44,17 +44,23 @@ class TestIntegrationLoads:
 
     def test_no_errors_in_ha_log_for_mammotion_lite(self, ha_client: HAClient):
         """No ERROR-level log entries for mammotion_lite on startup."""
-        # Check HA error log
+        import urllib.request
+
+        from tests.e2e.conftest import HA_URL
+
+        url = f"{HA_URL}/api/error_log"
+        headers = {"Authorization": f"Bearer {ha_client.token}"}
+        req = urllib.request.Request(url, headers=headers)
         try:
-            result = ha_client.request("GET", "/api/error_log")
-        except RuntimeError:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                log_text = resp.read().decode()
+        except Exception:
             pytest.skip("Error log endpoint not available")
             return
 
-        if result and isinstance(result, str):
-            lines = result.split("\n")
-            mammotion_errors = [
-                line for line in lines
-                if "mammotion_lite" in line and "ERROR" in line
-            ]
-            assert mammotion_errors == [], f"Found errors: {mammotion_errors}"
+        lines = log_text.split("\n")
+        mammotion_errors = [
+            line for line in lines
+            if "mammotion_lite" in line and "ERROR" in line
+        ]
+        assert mammotion_errors == [], f"Found errors: {mammotion_errors}"

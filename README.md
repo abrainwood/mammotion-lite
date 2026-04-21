@@ -1,9 +1,9 @@
 # Mammotion Lite
 
 [![CI](https://github.com/abrainwood/mammotion-lite/actions/workflows/ci.yml/badge.svg)](https://github.com/abrainwood/mammotion-lite/actions/workflows/ci.yml)
-[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=mammotion-lite&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=mammotion-lite)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=mammotion-lite&metric=coverage)](https://sonarcloud.io/summary/new_code?id=mammotion-lite)
-[![Maintainability](https://sonarcloud.io/api/project_badges/measure?project=mammotion-lite&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=mammotion-lite)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=abrainwood_mammotion-lite&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=mammotion-lite)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=abrainwood_mammotion-lite&metric=coverage)](https://sonarcloud.io/summary/new_code?id=mammotion-lite)
+[![Maintainability](https://sonarcloud.io/api/project_badges/measure?project=abrainwood_mammotion-lite&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=mammotion-lite)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 [![Click to open this repository inside your own Home Assistant HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=abrainwood&repository=mammotion-lite&category=Integration)

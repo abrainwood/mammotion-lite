@@ -131,11 +131,21 @@ class FakeThingPropertiesMessage:
     version: str = "1.0"
 
 
-class FakeStatusType:
-    """Mimics pymammotion.data.mqtt.status.StatusType enum values."""
+try:
+    from pymammotion.data.mqtt.status import StatusType as _RealStatusType
 
-    CONNECTED = "1"
-    DISCONNECTED = "0"
+    class FakeStatusType:
+        """Uses real pymammotion StatusType enum values."""
+
+        CONNECTED = _RealStatusType.CONNECTED
+        DISCONNECTED = _RealStatusType.DISCONNECTED
+except ImportError:
+
+    class FakeStatusType:
+        """Fallback when pymammotion not installed."""
+
+        CONNECTED = 1
+        DISCONNECTED = 3
 
 
 @dataclass
@@ -376,6 +386,64 @@ def make_mock_client(
     client.get_stream_subscription = AsyncMock(return_value=None)
 
     return client
+
+
+# ---------------------------------------------------------------------------
+# Callback-capturing client for integration tests
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CapturedCallbacks:
+    """Stores the callback handlers registered during setup_entry.
+
+    Integration tests call these to simulate MQTT push data flowing
+    through the real handler chain into HA entities.
+    """
+
+    on_properties: Any = None  # async (ThingPropertiesMessage) -> None
+    on_status: Any = None  # async (ThingStatusMessage) -> None
+    on_event: Any = None  # async (ThingEventMessage) -> None
+    on_state_changed: Any = None  # async (DeviceSnapshot) -> None
+
+
+def make_capturing_client(
+    *,
+    devices: list[FakeDevice] | None = None,
+) -> tuple[MagicMock, CapturedCallbacks]:
+    """Build a mock client that captures subscription callbacks.
+
+    Returns (client, captured) where captured.on_properties etc. are
+    populated after async_setup_entry runs. Call them to simulate pushes.
+    """
+    captured = CapturedCallbacks()
+
+    def _capture_properties(device_name, handler):
+        captured.on_properties = handler
+        return FakeSubscription()
+
+    def _capture_status(device_name, handler):
+        captured.on_status = handler
+        return FakeSubscription()
+
+    def _capture_event(device_name, handler):
+        captured.on_event = handler
+        return FakeSubscription()
+
+    def _capture_state_changed(handler, **kwargs):
+        captured.on_state_changed = handler
+        return FakeSubscription()
+
+    client = make_mock_client(devices=devices)
+    client.subscribe_device_properties = MagicMock(side_effect=_capture_properties)
+    client.subscribe_device_status = MagicMock(side_effect=_capture_status)
+    client.subscribe_device_event = MagicMock(side_effect=_capture_event)
+
+    # state_changed is on the mower handle
+    handle = client.mower("anything")
+    handle.subscribe_state_changed = MagicMock(side_effect=_capture_state_changed)
+
+    return client, captured
 
 
 # ---------------------------------------------------------------------------

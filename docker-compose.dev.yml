@@ -1,0 +1,22 @@
+# Shared between `make dev` (ha-dev-config volume) and E2E tests (ha-e2e-config).
+# NEVER run `docker compose down -v` - it removes ALL named volumes including dev.
+
+services:
+  homeassistant:
+    container_name: ${HA_CONTAINER:-ha-mammotion-dev}
+    image: ghcr.io/home-assistant/home-assistant:stable
+    volumes:
+      # Mount the custom component directly - edits reflect on restart
+      - ./custom_components/mammotion_lite:/config/custom_components/mammotion_lite:ro
+      # Persist HA config/state across restarts
+      - ${HA_VOLUME:-ha-mammotion-dev-config}:/config
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${HA_PORT:-8123}:8123"
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+volumes:
+  ha-mammotion-dev-config:
+  ha-mammotion-e2e-config:

@@ -4,27 +4,13 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from unittest.mock import MagicMock
 
 from custom_components.mammotion_lite.const import EVENT_CODE_LABELS
-from custom_components.mammotion_lite.runtime_data import MammotionLiteData
 from tests.conftest import (
-    make_mock_client,
+    make_data,
     make_properties_message,
     make_snapshot,
 )
-
-
-def _make_data(**kwargs) -> MammotionLiteData:
-    """Create MammotionLiteData with defaults."""
-    defaults = {
-        "client": make_mock_client(),
-        "commands": MagicMock(),
-        "device_name": "Luba-VSLKJX",
-        "iot_id": "abc123",
-    }
-    defaults.update(kwargs)
-    return MammotionLiteData(**defaults)
 
 
 class TestGetBattery:
@@ -34,7 +20,7 @@ class TestGetBattery:
         """Snapshot battery_level is preferred when > 0."""
         from custom_components.mammotion_lite.sensors import get_battery
 
-        data = _make_data()
+        data = make_data()
         data.snapshot = make_snapshot(battery_level=85)
         data.properties = make_properties_message(battery=70)
         assert get_battery(data) == 85
@@ -43,7 +29,7 @@ class TestGetBattery:
         """Properties battery used when no snapshot."""
         from custom_components.mammotion_lite.sensors import get_battery
 
-        data = _make_data()
+        data = make_data()
         data.properties = make_properties_message(battery=70)
         assert get_battery(data) == 70
 
@@ -51,14 +37,14 @@ class TestGetBattery:
         """Returns None when neither snapshot nor properties have battery."""
         from custom_components.mammotion_lite.sensors import get_battery
 
-        data = _make_data()
+        data = make_data()
         assert get_battery(data) is None
 
     def test_battery_falls_through_zero_snapshot(self):
         """Snapshot with battery_level=0 falls through to properties."""
         from custom_components.mammotion_lite.sensors import get_battery
 
-        data = _make_data()
+        data = make_data()
         data.snapshot = make_snapshot(battery_level=0)
         data.properties = make_properties_message(battery=65)
         assert get_battery(data) == 65
@@ -71,25 +57,25 @@ class TestGetActivity:
         """Snapshot mowing_activity is preferred when not unknown(0)."""
         from custom_components.mammotion_lite.sensors import get_activity
 
-        data = _make_data()
+        data = make_data()
         data.snapshot = make_snapshot(mowing_activity="mowing")
         assert get_activity(data) == "mowing"
 
     def test_activity_fallback_to_last_event(self):
-        """Falls back to last event label when snapshot is unknown."""
+        """Falls back to EVENT_CODE_LABELS lookup when snapshot is unknown."""
         from custom_components.mammotion_lite.sensors import get_activity
 
-        data = _make_data()
+        data = make_data()
         data.snapshot = make_snapshot(mowing_activity="unknown(0)")
         data.last_event_code = "1307"
-        data.last_event_label = "Docked and charging"
-        assert get_activity(data) == "Docked and charging"
+        # get_activity derives the label from EVENT_CODE_LABELS, not from last_event_label
+        assert get_activity(data) == EVENT_CODE_LABELS["1307"]
 
     def test_activity_fallback_to_device_state(self):
         """Falls back to properties deviceState when no event."""
         from custom_components.mammotion_lite.sensors import get_activity
 
-        data = _make_data()
+        data = make_data()
         data.properties = make_properties_message(device_state="standby")
         assert get_activity(data) == "standby"
 
@@ -97,7 +83,7 @@ class TestGetActivity:
         """Returns None when no data sources available."""
         from custom_components.mammotion_lite.sensors import get_activity
 
-        data = _make_data()
+        data = make_data()
         assert get_activity(data) is None
 
 
@@ -108,7 +94,7 @@ class TestGetProgress:
         """Progress percentage is area >> 16."""
         from custom_components.mammotion_lite.sensors import get_progress
 
-        data = _make_data()
+        data = make_data()
         # 42% encoded in upper 16 bits
         data.snapshot = make_snapshot(area=42 << 16)
         assert get_progress(data) == 42
@@ -117,7 +103,7 @@ class TestGetProgress:
         """100% progress."""
         from custom_components.mammotion_lite.sensors import get_progress
 
-        data = _make_data()
+        data = make_data()
         data.snapshot = make_snapshot(area=100 << 16)
         assert get_progress(data) == 100
 
@@ -125,14 +111,14 @@ class TestGetProgress:
         """Returns None when no snapshot."""
         from custom_components.mammotion_lite.sensors import get_progress
 
-        data = _make_data()
+        data = make_data()
         assert get_progress(data) is None
 
     def test_progress_none_when_area_zero(self):
         """Returns None when area is 0 (no job data)."""
         from custom_components.mammotion_lite.sensors import get_progress
 
-        data = _make_data()
+        data = make_data()
         data.snapshot = make_snapshot(area=0)
         assert get_progress(data) is None
 
@@ -144,7 +130,7 @@ class TestGetLastEvent:
         """Returns last event label."""
         from custom_components.mammotion_lite.sensors import get_last_event
 
-        data = _make_data()
+        data = make_data()
         data.last_event_label = "Task started"
         assert get_last_event(data) == "Task started"
 
@@ -152,14 +138,14 @@ class TestGetLastEvent:
         """Returns None when no event received."""
         from custom_components.mammotion_lite.sensors import get_last_event
 
-        data = _make_data()
+        data = make_data()
         assert get_last_event(data) is None
 
     def test_extra_attrs_include_code_and_timestamp(self):
         """Extra attributes include code and ISO timestamp."""
         from custom_components.mammotion_lite.sensors import get_last_event_attrs
 
-        data = _make_data()
+        data = make_data()
         data.last_event_code = "1301"
         data.last_event_time = datetime(2026, 4, 20, 10, 0, 0, tzinfo=timezone.utc)
         attrs = get_last_event_attrs(data)
@@ -170,7 +156,7 @@ class TestGetLastEvent:
         """Extra attributes are empty when no event."""
         from custom_components.mammotion_lite.sensors import get_last_event_attrs
 
-        data = _make_data()
+        data = make_data()
         assert get_last_event_attrs(data) == {}
 
 
@@ -181,7 +167,7 @@ class TestExtractWifiRssi:
         """Extracts wifi_rssi from JSON string networkInfo."""
         from custom_components.mammotion_lite.sensors import extract_wifi_rssi
 
-        data = _make_data()
+        data = make_data()
         data.properties = make_properties_message(network_info={"wifi_rssi": -55})
         assert extract_wifi_rssi(data) == -55
 
@@ -189,14 +175,14 @@ class TestExtractWifiRssi:
         """Returns None when no properties."""
         from custom_components.mammotion_lite.sensors import extract_wifi_rssi
 
-        data = _make_data()
+        data = make_data()
         assert extract_wifi_rssi(data) is None
 
     def test_rssi_none_when_no_network_info(self):
         """Returns None when networkInfo not in properties."""
         from custom_components.mammotion_lite.sensors import extract_wifi_rssi
 
-        data = _make_data()
+        data = make_data()
         data.properties = make_properties_message(battery=80)
         assert extract_wifi_rssi(data) is None
 
@@ -208,7 +194,7 @@ class TestGetBladeHeight:
         """Snapshot blade_height preferred when > 0."""
         from custom_components.mammotion_lite.sensors import get_blade_height
 
-        data = _make_data()
+        data = make_data()
         data.snapshot = make_snapshot(blade_height=50)
         assert get_blade_height(data) == 50
 
@@ -216,7 +202,7 @@ class TestGetBladeHeight:
         """Falls back to properties knifeHeight."""
         from custom_components.mammotion_lite.sensors import get_blade_height
 
-        data = _make_data()
+        data = make_data()
         data.properties = make_properties_message(knife_height=45)
         assert get_blade_height(data) == 45
 
@@ -224,5 +210,5 @@ class TestGetBladeHeight:
         """Returns None when no data."""
         from custom_components.mammotion_lite.sensors import get_blade_height
 
-        data = _make_data()
+        data = make_data()
         assert get_blade_height(data) is None

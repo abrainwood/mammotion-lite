@@ -12,12 +12,13 @@ correctly handles a mow session from start to finish.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_PASSWORD
 from homeassistant.core import HomeAssistant
+from pymammotion.proto import RptAct
 
 from custom_components.mammotion_lite.const import (
     CONF_ACCOUNTNAME,
@@ -33,6 +34,7 @@ from tests.conftest import (
 
 PATCH_CLIENT = "custom_components.mammotion_lite.MammotionClient"
 PATCH_SESSION = "custom_components.mammotion_lite.aiohttp_client.async_get_clientsession"
+PATCH_COMMAND = "custom_components.mammotion_lite.MammotionCommand"
 
 # Entity IDs
 BATTERY = "sensor.luba_vslkjx_battery"
@@ -40,6 +42,17 @@ ACTIVITY = "sensor.luba_vslkjx_activity"
 PROGRESS = "sensor.luba_vslkjx_job_progress"
 LAST_EVENT = "sensor.luba_vslkjx_last_event"
 ONLINE = "binary_sensor.luba_vslkjx_online"
+
+
+def _rpt_acts_sent(entry) -> list[RptAct]:
+    """Extract rpt_act values from all request_iot_sys calls on the entry's commands mock."""
+    commands = entry.runtime_data.commands
+    acts = []
+    for call in commands.request_iot_sys.call_args_list:
+        rpt_act = call.kwargs.get("rpt_act")
+        if rpt_act is not None:
+            acts.append(rpt_act)
+    return acts
 
 
 async def _setup(hass: HomeAssistant):
@@ -61,6 +74,7 @@ async def _setup(hass: HomeAssistant):
     with (
         patch(PATCH_CLIENT, return_value=client),
         patch(PATCH_SESSION, return_value=MagicMock()),
+        patch(PATCH_COMMAND, return_value=MagicMock()),
     ):
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
@@ -75,14 +89,14 @@ class TestMowLifecycle:
     async def test_full_mow_cycle(self, hass: HomeAssistant):
         """Complete mow lifecycle: start -> mowing -> docked."""
         entry, client, captured = await _setup(hass)
-        handle = client.mower("Luba-VSLKJX")
 
         # -- Phase 1: Task started event (1301) --
         await captured.on_event(make_event_message(code="1301"))
         await hass.async_block_till_done()
 
-        # Verify RPT_START command was sent
-        assert handle.send_raw.await_count >= 1, "RPT_START should have been sent"
+        # Verify RPT_START command was sent (not just any send_raw call)
+        acts = _rpt_acts_sent(entry)
+        assert RptAct.RPT_START in acts, f"Expected RPT_START in {acts}"
 
         # Last event sensor shows "Task started"
         state = hass.states.get(LAST_EVENT)
@@ -90,7 +104,6 @@ class TestMowLifecycle:
         assert state.attributes["code"] == "1301"
 
         # -- Phase 2: Snapshot pushes during mowing --
-        # First snapshot: 95% battery, mowing, 10% progress
         await captured.on_state_changed(
             make_snapshot(
                 battery_level=95,
@@ -106,7 +119,7 @@ class TestMowLifecycle:
         assert hass.states.get(PROGRESS).state == "10"
         assert hass.states.get(ONLINE).state == "on"
 
-        # Second snapshot: 80% battery, mowing, 55% progress
+        # Second snapshot: 80% battery, 55% progress
         await captured.on_state_changed(
             make_snapshot(
                 battery_level=80,
@@ -120,15 +133,16 @@ class TestMowLifecycle:
         assert hass.states.get(BATTERY).state == "80"
         assert hass.states.get(PROGRESS).state == "55"
 
-        # Record send_raw call count before RPT_STOP
-        calls_before_stop = handle.send_raw.await_count
+        # Clear call history so we can check RPT_STOP specifically
+        entry.runtime_data.commands.request_iot_sys.reset_mock()
 
         # -- Phase 3: Docked/charging event (1307) --
         await captured.on_event(make_event_message(code="1307"))
         await hass.async_block_till_done()
 
-        # Verify RPT_STOP command was sent (one more call)
-        assert handle.send_raw.await_count > calls_before_stop, "RPT_STOP should have been sent"
+        # Verify RPT_STOP command was sent (not just any call)
+        acts = _rpt_acts_sent(entry)
+        assert RptAct.RPT_STOP in acts, f"Expected RPT_STOP in {acts}"
 
         # Last event sensor shows "Docked and charging"
         state = hass.states.get(LAST_EVENT)
@@ -138,21 +152,24 @@ class TestMowLifecycle:
     async def test_returning_to_base_keeps_reporting(self, hass: HomeAssistant):
         """Event 1304 (returning) does NOT trigger RPT_STOP - reporting continues."""
         entry, client, captured = await _setup(hass)
-        handle = client.mower("Luba-VSLKJX")
 
         # Start mowing
         await captured.on_event(make_event_message(code="1301"))
         await hass.async_block_till_done()
 
-        # Runtime data should have reporting_active
         data = entry.runtime_data
         assert data.reporting_active is True
+
+        # Clear call history
+        data.commands.request_iot_sys.reset_mock()
 
         # Returning to base event
         await captured.on_event(make_event_message(code="1304"))
         await hass.async_block_till_done()
 
-        # Reporting should still be active
+        # No RPT_STOP should have been sent
+        acts = _rpt_acts_sent(entry)
+        assert RptAct.RPT_STOP not in acts, f"Unexpected RPT_STOP in {acts}"
         assert data.reporting_active is True
 
         # Last event updated
@@ -166,28 +183,32 @@ class TestMowLifecycle:
         """
         entry, client, captured = await _setup(hass)
 
-        # Start mowing
         await captured.on_event(make_event_message(code="1301"))
         await hass.async_block_till_done()
 
         data = entry.runtime_data
         assert data.reporting_active is True
 
+        data.commands.request_iot_sys.reset_mock()
+
         # Task completed
         await captured.on_event(make_event_message(code="1305"))
         await hass.async_block_till_done()
 
-        # Still reporting
+        acts = _rpt_acts_sent(entry)
+        assert RptAct.RPT_STOP not in acts
         assert data.reporting_active is True
 
         # Only stops when docked
         await captured.on_event(make_event_message(code="1307"))
         await hass.async_block_till_done()
 
+        acts = _rpt_acts_sent(entry)
+        assert RptAct.RPT_STOP in acts
         assert data.reporting_active is False
 
     async def test_sensors_show_unknown_before_any_push(self, hass: HomeAssistant):
-        """Before any push data, sensors show unknown (not stale values)."""
+        """Before any push data, sensor entities render as 'unknown' in HA."""
         entry, client, captured = await _setup(hass)
 
         assert hass.states.get(BATTERY).state == "unknown"

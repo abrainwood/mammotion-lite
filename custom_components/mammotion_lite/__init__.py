@@ -227,11 +227,8 @@ async def async_setup_entry(
         except Exception:
             _LOGGER.debug("Initial probe failed for %s", device_name)
 
-    entry.async_on_unload(
-        hass.bus.async_listen_once(
-            "homeassistant_started",
-            lambda _: hass.async_create_task(_initial_probe()),
-        )
+    entry.async_create_background_task(
+        hass, _initial_probe(), f"mammotion_lite_probe_{device_name}"
     )
 
     return True
@@ -306,11 +303,9 @@ def _setup_subscriptions(
 
 def _schedule_cloud_retry(hass: HomeAssistant, entry: MammotionLiteConfigEntry) -> None:
     """Schedule a background retry for cloud connection."""
-    entry.async_on_unload(
-        hass.bus.async_listen_once(
-            "homeassistant_started",
-            lambda _: hass.async_create_task(_cloud_retry(hass, entry)),
-        )
+    device_name = entry.data[CONF_DEVICE_NAME]
+    entry.async_create_background_task(
+        hass, _cloud_retry(hass, entry), f"mammotion_lite_cloud_retry_{device_name}"
     )
 
 

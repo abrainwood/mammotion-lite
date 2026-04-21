@@ -27,10 +27,14 @@ def _ensure_pycares_thread() -> None:
     """
     try:
         import pycares
-        import time
 
         pycares.Channel()
-        time.sleep(0.05)  # let the daemon thread start
+        # Poll until the daemon thread is visible (max 1s)
+        deadline = __import__("time").monotonic() + 1.0
+        while __import__("time").monotonic() < deadline:
+            if any("_run_safe_shutdown_loop" in t.name for t in threading.enumerate()):
+                break
+            __import__("time").sleep(0.01)
     except (ImportError, Exception):
         pass
 
@@ -444,6 +448,20 @@ def make_capturing_client(
     handle.subscribe_state_changed = MagicMock(side_effect=_capture_state_changed)
 
     return client, captured
+
+
+def make_data(**kwargs) -> "MammotionLiteData":
+    """Build a MammotionLiteData with sensible defaults for unit tests."""
+    from custom_components.mammotion_lite.runtime_data import MammotionLiteData
+
+    defaults = {
+        "client": make_mock_client(),
+        "commands": MagicMock(),
+        "device_name": "Luba-VSLKJX",
+        "iot_id": "abc123",
+    }
+    defaults.update(kwargs)
+    return MammotionLiteData(**defaults)
 
 
 # ---------------------------------------------------------------------------

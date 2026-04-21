@@ -1,0 +1,220 @@
+# Mammotion Lite
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+[![Click to open this repository inside your own Home Assistant HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=abrainwood&repository=mammotion-lite&category=Integration)
+
+> **Alpha** - this integration is under active development. It's in daily use on a Luba 2 AWD 1500 and works well, but hasn't been tested on other Mammotion models. If you try it, feedback is welcome - especially on other mower models, camera stability, or event codes we haven't seen yet. [Open an issue](https://github.com/abrainwood/mammotion-lite/issues).
+
+**Lightweight Mammotion mower integration for Home Assistant.** Passive sensors, event-driven reporting, and on-demand camera streaming - with near-zero impact on your mower's battery and navigation.
+
+Built as an alternative to the full [Mammotion-HA](https://github.com/mikey0000/Mammotion-HA) integration, which uses aggressive polling (5 coordinators, 5-second intervals during mowing) that causes battery drain, navigation interference, and unreliable position updates.
+
+---
+
+## What you get
+
+- **Battery sensor** - from passive 30-minute property pushes (no polling)
+- **Activity sensor** - mowing, returning, docked, charging (with fallback chain)
+- **Job progress** - percentage complete during mowing
+- **Last event** - task started, completed, returning, docked (with timestamps)
+- **WiFi signal** - RSSI from property pushes
+- **Blade height** - current cutting height
+- **Online/offline** - connectivity status
+- **GPS location** - device tracker from coordinate pushes
+- **Camera** - on-demand Agora WebRTC streaming via custom Lovelace card
+
+---
+
+## Why "Lite"?
+
+| | Mammotion-HA | Mammotion Lite |
+|---|---|---|
+| Polling during mowing | ~12 commands/minute | 0 (event-driven) |
+| Commands per mow session | Hundreds | 2 (RPT_START + RPT_STOP) |
+| Idle impact | Continuous polling | Zero (passive 30-min pushes) |
+| Battery impact | Measurable drain | None observed |
+| Navigation interference | Reported by users | None observed |
+
+**How it works:** Instead of polling, the integration listens for MQTT push events from the Mammotion cloud. When the mower starts a task (event code 1301), we send a single RPT_START command to enable 60-second reporting. When it docks (event code 1307), we send RPT_STOP. A keepalive renews the report subscription every 2 minutes during mowing to recover from app interference. Between mows, we receive passive 30-minute property pushes with no commands sent at all.
+
+---
+
+## Installation
+
+### Method 1: HACS (recommended)
+
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
+
+1. Make sure [HACS](https://hacs.xyz) is installed
+2. In HACS, click the three-dot menu (top right) and choose **Custom repositories**
+3. Add `https://github.com/abrainwood/mammotion-lite` as an **Integration**
+4. Find **Mammotion Lite** in the HACS list and click **Download**
+5. Restart Home Assistant
+6. Go to **Settings > Integrations > Add Integration** and search for **"Mammotion Lite"**
+
+### Method 2: Manual
+
+1. Download the latest release from [GitHub](https://github.com/abrainwood/mammotion-lite/releases)
+2. Copy the `custom_components/mammotion_lite` folder into your `config/custom_components/` directory
+3. Restart Home Assistant
+4. Go to **Settings > Integrations > Add Integration** and search for **"Mammotion Lite"**
+
+---
+
+## Configuration
+
+No YAML needed - everything is configured through the Home Assistant UI.
+
+1. Enter your Mammotion account email and password
+2. If you have multiple mowers, select which one to configure
+3. That's it - sensors populate automatically from MQTT push data
+
+**Supported devices:** Luba 2 and Yuka models (devices with camera support). Luba 1 models are excluded as they don't have cameras.
+
+---
+
+## Camera setup
+
+The camera uses Agora WebRTC for streaming, handled entirely in the browser via a custom Lovelace card.
+
+### Add the card resource
+
+1. Go to **Settings > Dashboards > Resources**
+2. Add `/mammotion_lite/agora-client.js` as a **JavaScript Module**
+
+### Add the card to a dashboard
+
+Use the custom card type `camera-agora-card`:
+
+```yaml
+type: custom:camera-agora-card
+camera_entity: camera.YOUR_MOWER_NAME_camera
+```
+
+The card provides play/stop/fullscreen controls and camera switching (left/right/rear where supported).
+
+**Known limitation:** The mower briefly drops the video channel when processing MQTT events (`device_biz_req_event`). The card reconnects automatically, but you'll see momentary disconnects every 30-80 seconds during mowing. This is a firmware-level behaviour - the official app has the same issue but hides it with UI buffering.
+
+---
+
+## Entity reference
+
+| Entity | Type | Description |
+|---|---|---|
+| `sensor.DEVICE_battery` | Sensor | Battery percentage |
+| `sensor.DEVICE_activity` | Sensor | Current activity (mowing, returning, docked, etc.) |
+| `sensor.DEVICE_job_progress` | Sensor | Job completion percentage |
+| `sensor.DEVICE_last_event` | Sensor | Last notification event with code and timestamp |
+| `sensor.DEVICE_wifi_signal` | Sensor | WiFi RSSI (dBm) |
+| `sensor.DEVICE_blade_height` | Sensor | Blade height (mm) |
+| `binary_sensor.DEVICE_online` | Binary | Mower connectivity status |
+| `device_tracker.DEVICE_location` | Tracker | GPS location from coordinate pushes |
+| `camera.DEVICE_camera` | Camera | Placeholder image + Agora streaming services |
+
+Replace `DEVICE` with your mower's slugified name (e.g. `luba_vslkjx`).
+
+---
+
+## Example automations
+
+### Return mower when rain is incoming
+
+Works great with [Rain Incoming](https://github.com/abrainwood/home-assistant-rain-incoming):
+
+```yaml
+automation:
+  - alias: "Return mower - rain incoming"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.rain_incoming_imminent
+        to: "on"
+    condition:
+      - condition: state
+        entity_id: sensor.DEVICE_activity
+        state: "mowing"
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "Rain incoming - mower is out!"
+          message: "Battery at {{ states('sensor.DEVICE_battery') }}%, {{ states('sensor.DEVICE_job_progress') }}% complete"
+```
+
+### Notify when mow is complete
+
+```yaml
+automation:
+  - alias: "Mow complete notification"
+    trigger:
+      - platform: state
+        entity_id: sensor.DEVICE_last_event
+        to: "Docked and charging"
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "Mow complete"
+          message: "Luba is docked and charging at {{ states('sensor.DEVICE_battery') }}%"
+```
+
+---
+
+## Event codes
+
+The integration tracks these notification event codes from the mower:
+
+| Code | Label | RPT action |
+|---|---|---|
+| 1301 | Task started | Triggers RPT_START (begin reporting) |
+| 1302 | Task cancelled | - |
+| 1304 | Returning to base | - |
+| 1305 | Task completed | - |
+| 1307 | Docked and charging | Triggers RPT_STOP (stop reporting) |
+
+Codes 1303 and 1306 have been observed but their meaning is unconfirmed (likely error/stuck states).
+
+---
+
+## Troubleshooting
+
+### Sensors show "unknown" after setup
+
+The integration relies on push data from the Mammotion cloud. An initial probe is sent on startup to request a few reports, but full sensor data arrives with the next 30-minute property push or when the mower starts a task. Give it up to 30 minutes for idle-state sensors to populate.
+
+### Camera shows "Connection error"
+
+1. Check that you've added the JS resource (`/mammotion_lite/agora-client.js`) in **Settings > Dashboards > Resources**
+2. Clear your browser cache (Lovelace caches JS aggressively)
+3. Make sure you're using the custom card type `camera-agora-card`, not the default camera card
+
+### Cloud connection fails
+
+The integration retries cloud connections in the background. If your Mammotion account credentials change, remove and re-add the integration.
+
+---
+
+## Requirements
+
+- Home Assistant 2024.1+
+- Mammotion cloud account (same credentials as the Mammotion app)
+- Internet access (Mammotion cloud + Agora for camera)
+
+---
+
+## Contributing
+
+Bug reports, feature requests, and PRs are welcome. The project uses TDD - see [CLAUDE.md](CLAUDE.md) for development setup and test instructions.
+
+```bash
+# Run tests
+cd mammotion-lite
+python -m pytest tests/unit tests/integration -v
+
+# Run E2E (needs Docker)
+python -m pytest tests/e2e/ -v
+```
+
+---
+
+## License
+
+[MIT](LICENSE)

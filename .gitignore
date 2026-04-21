@@ -5,3 +5,4 @@ __pycache__/
 dist/
 build/
 .python-version
+.e2e-token

@@ -1,0 +1,62 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Mammotion Lite",
+        "description": "Enter your Mammotion account credentials.",
+        "data": {
+          "account_name": "Email",
+          "password": "Password"
+        }
+      },
+      "select_device": {
+        "title": "Select Device",
+        "description": "Choose which mower to configure.",
+        "data": {
+          "device_name": "Device"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to Mammotion cloud.",
+      "invalid_auth": "Invalid email or password.",
+      "no_devices": "No compatible devices found on this account.",
+      "unknown": "An unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This device is already configured."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Battery"
+      },
+      "activity": {
+        "name": "Activity"
+      },
+      "job_progress": {
+        "name": "Job progress"
+      },
+      "wifi_signal": {
+        "name": "WiFi signal"
+      },
+      "blade_height": {
+        "name": "Blade height"
+      },
+      "last_event": {
+        "name": "Last event"
+      }
+    },
+    "binary_sensor": {
+      "online": {
+        "name": "Online"
+      }
+    },
+    "device_tracker": {
+      "location": {
+        "name": "Location"
+      }
+    }
+  }
+}

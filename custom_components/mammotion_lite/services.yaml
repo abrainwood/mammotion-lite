@@ -1,0 +1,15 @@
+refresh_stream:
+  name: Refresh stream
+  description: Refresh Agora stream subscription tokens from the Mammotion cloud.
+
+start_video:
+  name: Start video
+  description: Tell the mower to join the Agora video channel.
+
+stop_video:
+  name: Stop video
+  description: Tell the mower to leave the Agora video channel.
+
+get_tokens:
+  name: Get tokens
+  description: Return Agora token data for the JS card. Refreshes automatically if not cached.

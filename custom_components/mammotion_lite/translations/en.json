@@ -15,6 +15,14 @@
         "data": {
           "device_name": "Device"
         }
+      },
+      "reconfigure": {
+        "title": "Update Credentials",
+        "description": "Update your Mammotion account credentials.",
+        "data": {
+          "account_name": "Email",
+          "password": "Password"
+        }
       }
     },
     "error": {

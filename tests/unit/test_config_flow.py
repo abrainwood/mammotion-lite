@@ -247,3 +247,111 @@ async def test_client_stopped_on_failure(hass: HomeAssistant, flow):
         )
 
     client.stop.assert_awaited_once()
+
+
+# --- Reconfigure flow tests ---
+
+from homeassistant.config_entries import ConfigEntryState
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+
+async def test_reconfigure_shows_form(hass: HomeAssistant):
+    """Reconfigure step shows form with current email pre-filled."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_ACCOUNTNAME: "old@example.com",
+            CONF_PASSWORD: "oldpass",
+            CONF_DEVICE_NAME: "Luba-VSLKJX",
+            CONF_DEVICE_IOT_ID: "abc123",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    result = await entry.start_reconfigure_flow(hass)
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+
+
+async def test_reconfigure_success_updates_credentials(hass: HomeAssistant):
+    """Successful reconfigure updates credentials and preserves device info."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_ACCOUNTNAME: "old@example.com",
+            CONF_PASSWORD: "oldpass",
+            CONF_DEVICE_NAME: "Luba-VSLKJX",
+            CONF_DEVICE_IOT_ID: "abc123",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    client = make_mock_client()
+
+    with patch(PATCH_CLIENT, return_value=client):
+        result = await entry.start_reconfigure_flow(hass)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_ACCOUNTNAME: "new@example.com", CONF_PASSWORD: "newpass"},
+        )
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_ACCOUNTNAME] == "new@example.com"
+    assert entry.data[CONF_PASSWORD] == "newpass"
+    assert entry.data[CONF_DEVICE_NAME] == "Luba-VSLKJX"
+    assert entry.data[CONF_DEVICE_IOT_ID] == "abc123"
+
+
+async def test_reconfigure_invalid_auth_shows_error(hass: HomeAssistant):
+    """Invalid credentials during reconfigure shows error."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_ACCOUNTNAME: "old@example.com",
+            CONF_PASSWORD: "oldpass",
+            CONF_DEVICE_NAME: "Luba-VSLKJX",
+            CONF_DEVICE_IOT_ID: "abc123",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    client = make_mock_client(login_succeeds=True)
+    client.mammotion_http.login_info = None
+
+    with patch(PATCH_CLIENT, return_value=client):
+        result = await entry.start_reconfigure_flow(hass)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_ACCOUNTNAME: "bad@example.com", CONF_PASSWORD: "wrong"},
+        )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"]["base"] == "invalid_auth"
+
+
+async def test_reconfigure_connection_error(hass: HomeAssistant):
+    """Network failure during reconfigure shows cannot_connect error."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_ACCOUNTNAME: "old@example.com",
+            CONF_PASSWORD: "oldpass",
+            CONF_DEVICE_NAME: "Luba-VSLKJX",
+            CONF_DEVICE_IOT_ID: "abc123",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    client = make_mock_client(login_succeeds=False)
+
+    with patch(PATCH_CLIENT, return_value=client):
+        result = await entry.start_reconfigure_flow(hass)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_ACCOUNTNAME: "user@example.com", CONF_PASSWORD: "pass"},
+        )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"]["base"] == "cannot_connect"

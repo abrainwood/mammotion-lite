@@ -240,6 +240,26 @@ async def async_setup_entry(
     return True
 
 
+def _log_event_code(device_name: str, code: str) -> None:
+    """Log event code at appropriate level."""
+    if code in EVENT_CODE_LABELS:
+        _LOGGER.debug("[EVENT] %s: code=%s (%s)", device_name, code, EVENT_CODE_LABELS[code])
+    else:
+        _LOGGER.warning("[EVENT] %s: unknown event code %s - please report this", device_name, code)
+
+
+async def _handle_rpt_trigger(data: MammotionLiteData, code: str) -> None:
+    """Start or stop reporting based on event code."""
+    if code in START_REPORTING_CODES:
+        _LOGGER.debug("Event %s -> starting reporting", code)
+        await _send_rpt_start(data)
+        _start_keepalive(data)
+    elif code in STOP_REPORTING_CODES:
+        _LOGGER.debug("Event %s -> stopping reporting", code)
+        await _send_rpt_stop(data)
+        _stop_keepalive(data)
+
+
 def _setup_subscriptions(
     data: MammotionLiteData, client: MammotionClient, device_name: str
 ) -> None:
@@ -266,31 +286,17 @@ def _setup_subscriptions(
 
     async def _on_event(event) -> None:
         code = extract_event_code(event)
-        if code:
-            label = get_event_label(code)
-            if code in EVENT_CODE_LABELS:
-                _LOGGER.debug("[EVENT] %s: code=%s (%s)", device_name, code, label)
-            else:
-                _LOGGER.warning(
-                    "[EVENT] %s: unknown event code %s - please report this",
-                    device_name, code,
-                )
-            data.last_event_code = code
-            data.last_event_label = label
-            data.last_event_time = datetime.now(timezone.utc)
-            data.dispatch_update()
-
-            if code in START_REPORTING_CODES:
-                _LOGGER.debug("Event %s -> starting reporting", code)
-                await _send_rpt_start(data)
-                _start_keepalive(data)
-            elif code in STOP_REPORTING_CODES:
-                _LOGGER.debug("Event %s -> stopping reporting", code)
-                await _send_rpt_stop(data)
-                _stop_keepalive(data)
-        else:
+        if not code:
             identifier = getattr(event.params, "identifier", None)
             _LOGGER.debug("[EVENT] %s: identifier=%s (no code)", device_name, identifier)
+            return
+
+        _log_event_code(device_name, code)
+        data.last_event_code = code
+        data.last_event_label = get_event_label(code)
+        data.last_event_time = datetime.now(timezone.utc)
+        data.dispatch_update()
+        await _handle_rpt_trigger(data, code)
 
     sub_props = client.subscribe_device_properties(device_name, _on_properties)
     if sub_props:

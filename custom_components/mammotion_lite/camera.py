@@ -124,6 +124,7 @@ async def _async_setup_services(
                     _LOGGER.warning("FPV refresh failed for %s", data.device_name, exc_info=True)
         except asyncio.CancelledError:
             _LOGGER.debug("FPV refresh loop cancelled for %s", data.device_name)
+            raise
 
     async def handle_refresh_stream(call: ServiceCall) -> None:
         """Refresh stream subscription tokens from Mammotion cloud."""

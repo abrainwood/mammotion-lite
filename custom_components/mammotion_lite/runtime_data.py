@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -25,6 +25,7 @@ class MammotionLiteData:
     last_event_code: str | None = None
     last_event_label: str | None = None
     last_event_time: datetime | None = None
+    last_data_update: datetime | None = None
     _subscriptions: list[Any] = field(default_factory=list)
     _update_callbacks: list[Callable[[], None]] = field(default_factory=list)
     _keepalive_task: asyncio.Task | None = None
@@ -40,5 +41,15 @@ class MammotionLiteData:
 
     def dispatch_update(self) -> None:
         """Notify all registered entities of new data."""
+        for cb in self._update_callbacks:
+            cb()
+
+    def dispatch_sensor_update(self) -> None:
+        """Record sensor data arrival and notify entities.
+
+        Use this (not dispatch_update) for property and state pushes that
+        carry actual sensor data. Events and status changes use dispatch_update.
+        """
+        self.last_data_update = datetime.now(timezone.utc)
         for cb in self._update_callbacks:
             cb()

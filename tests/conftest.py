@@ -210,10 +210,35 @@ class FakeWorkData:
 
 
 @dataclass
+class FakeLocationPoint:
+    """Mimics pymammotion.data.model.location.LocationPoint."""
+
+    latitude: float = 0.0
+    longitude: float = 0.0
+
+
+@dataclass
+class FakeLocation:
+    """Mimics pymammotion.data.model.location.Location."""
+
+    device: FakeLocationPoint = field(default_factory=FakeLocationPoint)
+    position_type: int = 0
+
+
+@dataclass
+class FakeConnectData:
+    """Mimics the connect section of report data."""
+
+    wifi_rssi: int = 0
+    ble_rssi: int = 0
+
+
+@dataclass
 class FakeReportData:
     """Mimics MowerDevice.report_data."""
 
     work: FakeWorkData = field(default_factory=FakeWorkData)
+    connect: FakeConnectData = field(default_factory=FakeConnectData)
 
 
 @dataclass
@@ -221,6 +246,7 @@ class FakeRaw:
     """Mimics DeviceSnapshot.raw (MowerDevice)."""
 
     report_data: FakeReportData = field(default_factory=FakeReportData)
+    location: FakeLocation = field(default_factory=FakeLocation)
 
 
 @dataclass
@@ -322,6 +348,10 @@ def make_snapshot(
     area: int = 0,
     online: bool = True,
     sequence: int = 1,
+    latitude: float = 0.0,
+    longitude: float = 0.0,
+    position_type: int = 0,
+    wifi_rssi: int = 0,
 ) -> FakeDeviceSnapshot:
     """Build a FakeDeviceSnapshot."""
     return FakeDeviceSnapshot(
@@ -330,7 +360,16 @@ def make_snapshot(
         battery_level=battery_level,
         mowing_activity=mowing_activity,
         blade_height=blade_height,
-        raw=FakeRaw(report_data=FakeReportData(work=FakeWorkData(area=area))),
+        raw=FakeRaw(
+            report_data=FakeReportData(
+                work=FakeWorkData(area=area),
+                connect=FakeConnectData(wifi_rssi=wifi_rssi),
+            ),
+            location=FakeLocation(
+                device=FakeLocationPoint(latitude=latitude, longitude=longitude),
+                position_type=position_type,
+            ),
+        ),
     )
 
 
@@ -484,10 +523,16 @@ def fake_snapshot() -> FakeDeviceSnapshot:
 @pytest.fixture
 def fake_properties() -> FakeThingPropertiesMessage:
     """Provide a default fake ThingPropertiesMessage with common data."""
+    import math
+
     return make_properties_message(
         battery=75,
         device_state="standby",
         network_info={"wifi_rssi": -55},
-        coordinate={"lat": -33.8688, "lon": 151.2093},
+        # Mower sends coordinates in radians (Sydney)
+        coordinate={
+            "lat": -33.8688 * math.pi / 180,
+            "lon": 151.2093 * math.pi / 180,
+        },
         knife_height=45,
     )

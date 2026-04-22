@@ -22,6 +22,7 @@ from .const import (
     CONF_DEVICE_IOT_ID,
     CONF_DEVICE_NAME,
     DOMAIN,
+    EVENT_CODE_LABELS,
     START_REPORTING_CODES,
     STOP_REPORTING_CODES,
 )
@@ -216,7 +217,12 @@ async def async_setup_entry(
         try:
             command = data.commands.request_iot_sys(
                 rpt_act=RptAct.RPT_START,
-                rpt_info_type=[RptInfoType.RIT_DEV_STA, RptInfoType.RIT_WORK],
+                rpt_info_type=[
+                    RptInfoType.RIT_DEV_STA,
+                    RptInfoType.RIT_WORK,
+                    RptInfoType.RIT_DEV_LOCAL,
+                    RptInfoType.RIT_CONNECT,
+                ],
                 timeout=30_000,
                 period=10_000,
                 no_change_period=30_000,
@@ -243,7 +249,7 @@ def _setup_subscriptions(
     async def _on_properties(props) -> None:
         _LOGGER.debug("[PROPS] %s received", device_name)
         data.properties = props
-        data.dispatch_update()
+        data.dispatch_sensor_update()
 
     async def _on_status(status) -> None:
         is_online = status.params.status.value == StatusType.CONNECTED
@@ -256,13 +262,19 @@ def _setup_subscriptions(
         data.snapshot = snapshot
         data.online = snapshot.online
         data.last_report_time = time.monotonic()
-        data.dispatch_update()
+        data.dispatch_sensor_update()
 
     async def _on_event(event) -> None:
         code = extract_event_code(event)
         if code:
             label = get_event_label(code)
-            _LOGGER.debug("[EVENT] %s: code=%s (%s)", device_name, code, label)
+            if code in EVENT_CODE_LABELS:
+                _LOGGER.debug("[EVENT] %s: code=%s (%s)", device_name, code, label)
+            else:
+                _LOGGER.warning(
+                    "[EVENT] %s: unknown event code %s - please report this",
+                    device_name, code,
+                )
             data.last_event_code = code
             data.last_event_label = label
             data.last_event_time = datetime.now(timezone.utc)

@@ -25,8 +25,10 @@ from .sensors import (
     get_activity,
     get_battery,
     get_blade_height,
+    get_last_data_update,
     get_last_event,
     get_last_event_attrs,
+    get_last_event_time,
     get_progress,
 )
 
@@ -86,6 +88,20 @@ SENSOR_DESCRIPTIONS: tuple[MammotionSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:grass",
         value_fn=get_blade_height,
+    ),
+    MammotionSensorDescription(
+        key="last_event_time",
+        name="Last event time",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:bell-clock-outline",
+        value_fn=get_last_event_time,
+    ),
+    MammotionSensorDescription(
+        key="last_report_time",
+        name="Last report time",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:clock-check-outline",
+        value_fn=get_last_data_update,
     ),
 )
 

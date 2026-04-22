@@ -126,6 +126,36 @@ class TestAsyncSetupEntry:
         mock_cmd_cls.assert_called_once_with("Luba-VSLKJX", user_account=98765)
 
 
+class TestInitialProbe:
+    """Test the initial state probe sent on startup."""
+
+    async def test_initial_probe_requests_all_info_types(self, hass: HomeAssistant):
+        """Probe requests device status, work, location, and connectivity."""
+        from pymammotion.proto import RptInfoType
+
+        client = make_mock_client()
+        entry = _make_config_entry(hass)
+        entry.add_to_hass(hass)
+
+        mock_cmd = MagicMock()
+        mock_cmd_cls = MagicMock(return_value=mock_cmd)
+
+        with _patches(
+            client,
+            **{"custom_components.mammotion_lite.MammotionCommand": mock_cmd_cls},
+        ):
+            # Patch sleep so the probe fires immediately
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                await hass.config_entries.async_setup(entry.entry_id)
+                await hass.async_block_till_done()
+
+        info_types = mock_cmd.request_iot_sys.call_args.kwargs["rpt_info_type"]
+        assert RptInfoType.RIT_DEV_STA in info_types
+        assert RptInfoType.RIT_WORK in info_types
+        assert RptInfoType.RIT_DEV_LOCAL in info_types
+        assert RptInfoType.RIT_CONNECT in info_types
+
+
 class TestAsyncUnloadEntry:
     """Test async_unload_entry."""
 

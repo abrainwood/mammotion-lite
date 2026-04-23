@@ -8,11 +8,11 @@
 
 [![Click to open this repository inside your own Home Assistant HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=abrainwood&repository=mammotion-lite&category=Integration)
 
+> **Note:** The polling issues that originally motivated this project have since been addressed in the full [Mammotion-HA](https://github.com/mikey0000/Mammotion-HA) integration. If you want full mower control (start/stop, scheduling, zone management, BLE, firmware updates), use Mammotion-HA. Use this integration if you just want camera and basic sensors/statistics with a minimal footprint.
+
 > **Alpha** - this integration is under active development. It's in daily use on a Luba 2 AWD 1500 and works well, but hasn't been tested on other Mammotion models. If you try it, feedback is welcome - especially on other mower models, camera stability, or event codes I haven't seen yet. [Open an issue](https://github.com/abrainwood/mammotion-lite/issues).
 
-**Lightweight Mammotion mower integration for Home Assistant.** Passive sensors, event-driven reporting, and on-demand camera streaming - with near-zero impact on your mower's battery and navigation.
-
-Built as an alternative to the full [Mammotion-HA](https://github.com/mikey0000/Mammotion-HA) integration, which uses aggressive polling (5 coordinators, 5-second intervals during mowing) that results in higher battery drain and position update instability in the Mammotion app.
+**Lightweight Mammotion mower integration for Home Assistant.** Passive sensors, event-driven reporting, and on-demand camera streaming - read-only, with near-zero impact on your mower's battery and navigation.
 
 ---
 

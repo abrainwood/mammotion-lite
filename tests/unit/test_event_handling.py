@@ -8,6 +8,10 @@ import pytest
 
 from custom_components.mammotion_lite.const import (
     EVENT_CODE_LABELS,
+    EVENT_DOCKED_CHARGING,
+    EVENT_DOCKED_CHARGING_ALT,
+    EVENT_STARTED_ALT,
+    EVENT_TASK_STARTED,
     START_REPORTING_CODES,
     STOP_REPORTING_CODES,
 )
@@ -89,6 +93,12 @@ class TestEventCodeLabels:
         assert EVENT_CODE_LABELS["1301"] == "Task started"
         assert EVENT_CODE_LABELS["1307"] == "Docked and charging"
 
+    def test_manual_event_codes_have_labels(self):
+        """12xx (manual/app-triggered) event codes have labels."""
+        assert "1201" in EVENT_CODE_LABELS
+        assert "1205" in EVENT_CODE_LABELS
+        assert "1207" in EVENT_CODE_LABELS
+
     def test_unknown_code_label_fallback(self):
         """get_event_label returns a fallback for unknown codes."""
         label = get_event_label("9999")
@@ -100,12 +110,20 @@ class TestRptTriggerLogic:
     """Test which event codes trigger RPT_START/STOP."""
 
     def test_task_started_triggers_rpt_start(self):
-        """Event code 1301 (task started) should trigger reporting."""
-        assert "1301" in START_REPORTING_CODES
+        """Event code for task started should trigger reporting."""
+        assert EVENT_TASK_STARTED in START_REPORTING_CODES
+
+    def test_manual_start_triggers_rpt_start(self):
+        """Event code for manual/app start should trigger reporting."""
+        assert EVENT_STARTED_ALT in START_REPORTING_CODES
 
     def test_docked_charging_triggers_rpt_stop(self):
-        """Event code 1307 (docked/charging) should stop reporting."""
-        assert "1307" in STOP_REPORTING_CODES
+        """Event code for docked/charging should stop reporting."""
+        assert EVENT_DOCKED_CHARGING in STOP_REPORTING_CODES
+
+    def test_manual_docked_charging_triggers_rpt_stop(self):
+        """Event code for docked/charging after manual/cancel should stop reporting."""
+        assert EVENT_DOCKED_CHARGING_ALT in STOP_REPORTING_CODES
 
     def test_task_completed_does_not_trigger_rpt_stop(self):
         """Event code 1305 (task completed) does NOT trigger RPT_STOP.
@@ -114,6 +132,13 @@ class TestRptTriggerLogic:
         We want to keep reporting until the mower is actually docked.
         """
         assert "1305" not in STOP_REPORTING_CODES
+
+    def test_manual_completed_does_not_trigger_rpt_stop(self):
+        """Event code 1205 (arrived at base) does NOT trigger RPT_STOP.
+
+        Same as 1305 - we wait for 1207 (docked and charging) to stop.
+        """
+        assert "1205" not in STOP_REPORTING_CODES
 
     def test_returning_to_base_does_not_trigger_rpt_stop(self):
         """Event code 1304 (returning) does NOT trigger RPT_STOP."""

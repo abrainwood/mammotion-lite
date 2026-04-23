@@ -10,10 +10,22 @@ import json
 import logging
 from typing import Any
 
-from .const import EVENT_CODE_LABELS
+from .const import EVENT_CODE_TO_ACTIVITY
 from .runtime_data import MammotionLiteData
 
+from datetime import datetime
+
 _LOGGER = logging.getLogger(__name__)
+
+
+def get_last_event_time(data: MammotionLiteData) -> datetime | None:
+    """Get the timestamp of the most recent notification event."""
+    return data.last_event_time
+
+
+def get_last_data_update(data: MammotionLiteData) -> datetime | None:
+    """Get the timestamp of the most recent push data arrival."""
+    return data.last_data_update
 
 
 def get_battery(data: MammotionLiteData) -> int | None:
@@ -26,11 +38,20 @@ def get_battery(data: MammotionLiteData) -> int | None:
 
 
 def get_activity(data: MammotionLiteData) -> str | None:
-    """Get mowing activity with fallback chain: snapshot -> last event -> deviceState."""
-    if data.snapshot and data.snapshot.mowing_activity != "unknown(0)":
-        return data.snapshot.mowing_activity
+    """Get mowing activity with fallback chain: event code -> snapshot -> deviceState.
+
+    Event codes are the most timely signal during state transitions - the snapshot
+    may be stale from a previous probe until the next state push arrives.
+    """
     if data.last_event_code:
-        return EVENT_CODE_LABELS.get(data.last_event_code, f"unknown ({data.last_event_code})")
+        activity = EVENT_CODE_TO_ACTIVITY.get(data.last_event_code)
+        if activity:
+            return activity
+    if data.snapshot:
+        activity = data.snapshot.mowing_activity
+        if activity == "unknown(0)":
+            return "idle"
+        return activity
     if data.properties and data.properties.params.items.deviceState:
         return str(data.properties.params.items.deviceState.value)
     return None
@@ -64,7 +85,21 @@ def get_last_event_attrs(data: MammotionLiteData) -> dict[str, Any]:
 
 
 def extract_wifi_rssi(data: MammotionLiteData) -> int | None:
-    """Extract WiFi RSSI from networkInfo JSON property."""
+    """Extract WiFi RSSI from snapshot (preferred) or networkInfo property (fallback).
+
+    Snapshot provides wifi_rssi from report_data.connect when RPT reports are active.
+    Properties push provides it in the networkInfo JSON string every 30 minutes.
+    """
+    # Preferred: from RPT report data (available during mowing and initial probe)
+    if data.snapshot:
+        try:
+            rssi = data.snapshot.raw.report_data.connect.wifi_rssi
+            if rssi != 0:
+                return rssi
+        except AttributeError:
+            pass
+
+    # Fallback: from 30-min properties push
     if not data.properties or not data.properties.params.items.networkInfo:
         return None
     try:

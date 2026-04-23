@@ -4,23 +4,76 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+import math
 
 from .runtime_data import MammotionLiteData
 
 _LOGGER = logging.getLogger(__name__)
 
 # Coordinates where both abs(lat) and abs(lon) are below this threshold
-# are treated as invalid (uninitialised GPS). ~1.1km at the equator.
-NEAR_ZERO_THRESHOLD = 0.01
+# (in radians) are treated as uninitialised GPS. 0.01 rad ~ 0.57 deg ~ 63km.
+NEAR_ZERO_THRESHOLD_RAD = 0.01
+
+# Snapshot coordinates below this threshold in degrees are likely uninitialised
+# or raw radian values not yet converted by CoordinateConverter.
+# Valid lat must be > ~1 degree from equator for any real mower location.
+MIN_PLAUSIBLE_DEGREES = 1.0
+
+
+def _coords_from_snapshot(data: MammotionLiteData) -> tuple[float, float] | None:
+    """Extract coordinates from snapshot (RPT report data).
+
+    Only valid when pymammotion's CoordinateConverter has run with a proper
+    RTK base station reference. Before that, values may be raw ENU or radian
+    values that look like tiny degree values (e.g. -0.586 instead of -33.58).
+
+    We check position_type > 0 (meaning GPS/RTK fix) and that the coordinates
+    are plausible degree values (not radian-scale garbage).
+    """
+    if not data.snapshot:
+        return None
+    try:
+        raw = data.snapshot.raw
+        lat = raw.location.device.latitude
+        _LOGGER.debug(
+            "Snapshot coords: lat=%s, lon=%s, position_type=%s",
+            lat, raw.location.device.longitude, raw.location.position_type,
+        )
+        lon = raw.location.device.longitude
+
+        # position_type 0 = uninitialised, no GPS fix
+        if raw.location.position_type == 0:
+            return None
+
+        # Either coordinate near zero = likely uninitialised or unconverted radians
+        if abs(lat) < MIN_PLAUSIBLE_DEGREES or abs(lon) < MIN_PLAUSIBLE_DEGREES:
+            return None
+
+        # Sanity: valid WGS84 degrees have lat in [-90, 90], lon in [-180, 180]
+        # Values like -0.586 (radian for Sydney lat) would fail the MIN_PLAUSIBLE check above
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            return None
+
+        return (lat, lon)
+    except AttributeError:
+        return None
 
 
 def extract_coordinates(data: MammotionLiteData) -> tuple[float, float] | None:
-    """Extract GPS coordinates from properties push.
+    """Extract GPS coordinates from snapshot (preferred) or properties push (fallback).
 
-    Returns (lat, lon) tuple or None if coordinates are unavailable or invalid.
-    Filters out coordinates where both lat and lon are near zero (uninitialised GPS).
+    Snapshot coordinates come from RPT reports via pymammotion's coordinate
+    converter - already in WGS84 degrees. Properties coordinates are from
+    30-min passive pushes in radians, requiring conversion.
+
+    Returns (lat_degrees, lon_degrees) tuple or None.
     """
+    # Preferred: snapshot from RPT reports (degrees, updated every 60s during mowing)
+    result = _coords_from_snapshot(data)
+    if result:
+        return result
+
+    # Fallback: properties push (radians, 30-min passive push)
     if not data.properties or not data.properties.params.items.coordinate:
         return None
 
@@ -33,17 +86,21 @@ def extract_coordinates(data: MammotionLiteData) -> tuple[float, float] | None:
         else:
             return None
 
-        lat = coord.get("lat")
-        lon = coord.get("lon")
+        lat_rad = coord.get("lat")
+        lon_rad = coord.get("lon")
 
-        if lat is None or lon is None:
+        if lat_rad is None or lon_rad is None:
             return None
 
-        # Filter out uninitialised GPS (both lat and lon near zero)
-        if abs(lat) < NEAR_ZERO_THRESHOLD and abs(lon) < NEAR_ZERO_THRESHOLD:
+        # Filter out uninitialised GPS (both lat and lon near zero radians)
+        if abs(lat_rad) < NEAR_ZERO_THRESHOLD_RAD and abs(lon_rad) < NEAR_ZERO_THRESHOLD_RAD:
             return None
 
-        return (float(lat), float(lon))
+        # Convert from radians to degrees
+        lat_deg = lat_rad * 180.0 / math.pi
+        lon_deg = lon_rad * 180.0 / math.pi
+
+        return (lat_deg, lon_deg)
 
     except (json.JSONDecodeError, ValueError, TypeError):
         _LOGGER.debug("Failed to parse coordinate data")

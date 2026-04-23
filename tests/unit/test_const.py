@@ -9,6 +9,8 @@ from custom_components.mammotion_lite.const import (
     DOMAIN,
     EVENT_CODE_LABELS,
     EVENT_DOCKED_CHARGING,
+    EVENT_DOCKED_CHARGING_ALT,
+    EVENT_STARTED_ALT,
     EVENT_RETURNING_TO_BASE,
     EVENT_TASK_CANCELLED,
     EVENT_TASK_COMPLETED,
@@ -48,15 +50,17 @@ def test_event_code_labels_maps_all_known_codes():
 
 
 def test_start_reporting_codes():
-    """START_REPORTING_CODES contains only task started."""
+    """START_REPORTING_CODES contains scheduled and manual start codes."""
     assert EVENT_TASK_STARTED in START_REPORTING_CODES
-    assert len(START_REPORTING_CODES) == 1
+    assert EVENT_STARTED_ALT in START_REPORTING_CODES
+    assert len(START_REPORTING_CODES) == 2
 
 
 def test_stop_reporting_codes():
-    """STOP_REPORTING_CODES contains only docked/charging."""
+    """STOP_REPORTING_CODES contains scheduled and manual docked/charging codes."""
     assert EVENT_DOCKED_CHARGING in STOP_REPORTING_CODES
-    assert len(STOP_REPORTING_CODES) == 1
+    assert EVENT_DOCKED_CHARGING_ALT in STOP_REPORTING_CODES
+    assert len(STOP_REPORTING_CODES) == 2
 
 
 def test_device_info_returns_correct_shape():

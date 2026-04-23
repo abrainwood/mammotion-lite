@@ -61,6 +61,7 @@ async def _send_rpt_start(data: MammotionLiteData) -> None:
                 RptInfoType.RIT_WORK,
                 RptInfoType.RIT_DEV_LOCAL,
                 RptInfoType.RIT_CONNECT,
+                RptInfoType.RIT_RTK,
             ],
             timeout=_REPORT_TIMEOUT_MS,
             period=_REPORT_PERIOD_MS,

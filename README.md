@@ -148,6 +148,24 @@ The camera requires the Agora custom lovelace card (included) and won't work by 
 
 The integration retries cloud connections in the background. If your Mammotion account credentials change, go to **Settings > Integrations > Mammotion Lite > Configure** to update them.
 
+### pymammotion version conflict with Mammotion-HA
+
+If you have both this integration and the full [Mammotion-HA](https://github.com/mikey0000/Mammotion-HA) integration installed, you may see errors like:
+
+```
+cannot import name 'MowerDevice' from 'pymammotion.data.model.device'
+```
+
+or
+
+```
+cannot import name 'RTKBaseStationDevice' from 'pymammotion.data.model.device'
+```
+
+This happens because both integrations depend on `pymammotion` but Home Assistant installs all dependencies into a single Python environment - only one version can exist at a time. If the two integrations pin different versions, whichever loads last overwrites the other.
+
+**To fix:** Update both integrations to their latest versions (both should work with the same pymammotion version). If the issue persists, temporarily disable one integration, restart HA, then re-enable it.
+
 ---
 
 ## Requirements

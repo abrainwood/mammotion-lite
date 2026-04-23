@@ -132,3 +132,49 @@ class MammotionLiteConfigFlow(ConfigFlow, domain=DOMAIN):
                 {vol.Required(CONF_DEVICE_NAME): vol.In(device_names)}
             ),
         )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle reconfiguration - update credentials."""
+        errors: dict[str, str] = {}
+        entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+
+        if user_input is not None:
+            account = user_input[CONF_ACCOUNTNAME]
+            password = user_input[CONF_PASSWORD]
+
+            client = MammotionClient()
+            session = aiohttp_client.async_get_clientsession(self.hass)
+
+            try:
+                await client.login_and_initiate_cloud(account, password, session)
+                if client.mammotion_http is None or client.mammotion_http.login_info is None:
+                    errors["base"] = "invalid_auth"
+                else:
+                    return self.async_update_reload_and_abort(
+                        entry,
+                        data={
+                            **entry.data,
+                            CONF_ACCOUNTNAME: account,
+                            CONF_PASSWORD: password,
+                        },
+                    )
+            except AbortFlow:
+                raise
+            except Exception:
+                _LOGGER.exception("Failed to connect to Mammotion cloud")
+                errors["base"] = "cannot_connect"
+            finally:
+                await client.stop()
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_ACCOUNTNAME, default=entry.data.get(CONF_ACCOUNTNAME, "")): str,
+                    vol.Required(CONF_PASSWORD): str,
+                }
+            ),
+            errors=errors,
+        )

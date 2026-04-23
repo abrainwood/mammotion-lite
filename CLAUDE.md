@@ -15,7 +15,12 @@ Lightweight Mammotion mower integration for Home Assistant. Passive sensors + on
 - Job progress percentage = `report_data.work.area >> 16` (NOT the `progress` field)
 - Static files served via `async_setup` + `StaticPathConfig` (not `async_setup_entry`)
 - RPT_START: period=60000ms, timeout=180000ms, keepalive every 120s
-- Event codes: 1301=task started, 1302=cancelled, 1304=returning, 1305=completed, 1307=docked/charging
+- Event codes: 13xx and 12xx series with same suffix meanings (distinction unclear)
+  - x01=task started, x02=cancelled, x04=returning, x05=completed, x07=docked/charging
+  - RPT_START triggered by 1301 and 1201; RPT_STOP triggered by 1307 and 1207
+  - Unknown codes logged at WARNING for investigation
+- Coordinate property push sends RTK values in radians (not degrees) - must convert with `* 180 / pi`
+- Activity sensor uses EVENT_CODE_TO_ACTIVITY mapping (event codes take priority over snapshot)
 
 ## Development
 

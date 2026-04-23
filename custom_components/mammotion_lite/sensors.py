@@ -103,6 +103,19 @@ def get_zone_hash(data: MammotionLiteData) -> int | None:
     return None
 
 
+def get_zone_name(data: MammotionLiteData) -> str | None:
+    """Get the human-readable name of the zone currently being mowed.
+
+    Uses the area_names mapping (populated on startup via get_area_name_list).
+    Falls back to the raw hash as a string if no name is available.
+    Returns None when no zone is active.
+    """
+    zone_hash = get_zone_hash(data)
+    if zone_hash is None:
+        return None
+    return data.area_names.get(zone_hash, str(zone_hash))
+
+
 def get_last_event(data: MammotionLiteData) -> str | None:
     """Get last event label."""
     return data.last_event_label

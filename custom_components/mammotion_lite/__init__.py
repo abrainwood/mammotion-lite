@@ -234,6 +234,22 @@ async def async_setup_entry(
         except Exception:
             _LOGGER.debug("Initial probe failed for %s", device_name)
 
+        # Fetch area name list (one-time, maps zone hashes to human-readable names)
+        try:
+            area_cmd = data.commands.get_area_name_list(device_id=data.iot_id)
+            await probe_handle.send_raw(area_cmd)
+            _LOGGER.debug("Area name list requested for %s", device_name)
+            # Give the response time to arrive and populate map.area_name
+            await asyncio.sleep(5)
+            device = data.client.get_device_by_name(data.device_name)
+            if device and device.map.area_name:
+                data.area_names = {area.hash: area.name for area in device.map.area_name}
+                _LOGGER.debug("Area names loaded: %s", data.area_names)
+            else:
+                _LOGGER.debug("No area names received for %s", device_name)
+        except Exception:
+            _LOGGER.debug("Area name list fetch failed for %s", device_name)
+
     entry.async_create_background_task(
         hass, _initial_probe(), f"mammotion_lite_probe_{device_name}"
     )

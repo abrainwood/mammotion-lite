@@ -55,7 +55,7 @@
       "last_event": {
         "name": "Last event"
       },
-      "zone_hash": {
+      "mowing_zone": {
         "name": "Mowing zone"
       }
     },

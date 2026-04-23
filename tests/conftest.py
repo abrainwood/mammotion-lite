@@ -102,9 +102,13 @@ class FakeSubscription:
 
 @dataclass
 class FakePropertyValue:
-    """Mimics a single property item (e.g. batteryPercentage, deviceState)."""
+    """Mimics a single property item (e.g. batteryPercentage, deviceState).
+
+    The time field is epoch milliseconds, matching pymammotion's Item.time.
+    """
 
     value: Any = None
+    time: int = 0
 
 
 @dataclass
@@ -293,6 +297,7 @@ class FakeDevice:
 def make_properties_message(
     *,
     battery: int | None = None,
+    battery_time: int = 0,
     device_state: str | None = None,
     network_info: dict | None = None,
     coordinate: dict | None = None,
@@ -300,7 +305,7 @@ def make_properties_message(
 ) -> FakeThingPropertiesMessage:
     """Build a FakeThingPropertiesMessage with specified fields."""
     items = FakePropertyItems(
-        batteryPercentage=FakePropertyValue(battery) if battery is not None else None,
+        batteryPercentage=FakePropertyValue(battery, time=battery_time) if battery is not None else None,
         deviceState=FakePropertyValue(device_state) if device_state is not None else None,
         networkInfo=(
             FakePropertyValue(json.dumps(network_info)) if network_info is not None else None
@@ -352,10 +357,17 @@ def make_snapshot(
     longitude: float = 0.0,
     position_type: int = 0,
     wifi_rssi: int = 0,
+    timestamp_ms: int | None = None,
 ) -> FakeDeviceSnapshot:
     """Build a FakeDeviceSnapshot."""
+    ts = (
+        datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+        if timestamp_ms is not None
+        else datetime.now(timezone.utc)
+    )
     return FakeDeviceSnapshot(
         sequence=sequence,
+        timestamp=ts,
         online=online,
         battery_level=battery_level,
         mowing_activity=mowing_activity,

@@ -28,13 +28,34 @@ def get_last_data_update(data: MammotionLiteData) -> datetime | None:
     return data.last_data_update
 
 
+def _snapshot_epoch_ms(data: MammotionLiteData) -> int:
+    """Get snapshot timestamp as epoch milliseconds, or 0 if no snapshot."""
+    if not data.snapshot:
+        return 0
+    return int(data.snapshot.timestamp.timestamp() * 1000)
+
+
 def get_battery(data: MammotionLiteData) -> int | None:
-    """Get battery from snapshot (preferred) or properties push (fallback)."""
-    if data.snapshot and data.snapshot.battery_level > 0:
-        return data.snapshot.battery_level
-    if data.properties and data.properties.params.items.batteryPercentage:
-        return data.properties.params.items.batteryPercentage.value
-    return None
+    """Get battery from whichever source has the latest timestamp.
+
+    During mowing, snapshot updates every 60s and is preferred.
+    After RPT_STOP, snapshot becomes stale - the 30-min properties push
+    has fresher data (e.g. battery increasing from charging).
+    """
+    snapshot_val = data.snapshot.battery_level if data.snapshot and data.snapshot.battery_level > 0 else None
+    snapshot_time = _snapshot_epoch_ms(data) if snapshot_val is not None else 0
+
+    props_item = (
+        data.properties.params.items.batteryPercentage
+        if data.properties and data.properties.params.items.batteryPercentage
+        else None
+    )
+    props_val = props_item.value if props_item else None
+    props_time = props_item.time if props_item else 0
+
+    if snapshot_val is not None and props_val is not None:
+        return snapshot_val if snapshot_time >= props_time else props_val
+    return snapshot_val if snapshot_val is not None else props_val
 
 
 def get_activity(data: MammotionLiteData) -> str | None:

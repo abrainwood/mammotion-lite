@@ -32,10 +32,40 @@ class TestDispatchSensorUpdate:
 
 
 class TestGetBattery:
-    """Test battery value extraction with fallback chain."""
+    """Test battery value extraction with timestamp-based source selection.
+
+    When both snapshot and properties have battery data, the one with the
+    latest timestamp wins. This prevents stale snapshot values (e.g. 64%
+    from end of mowing) overriding fresh properties pushes (e.g. 78%
+    from charging).
+    """
+
+    def test_battery_from_newer_snapshot(self):
+        """Snapshot battery used when its timestamp is newer than properties."""
+        from custom_components.mammotion_lite.sensors import get_battery
+
+        data = make_data()
+        # Snapshot at T=2000, properties at T=1000 -> snapshot wins
+        data.snapshot = make_snapshot(battery_level=85, timestamp_ms=2000)
+        data.properties = make_properties_message(battery=70, battery_time=1000)
+        assert get_battery(data) == 85
+
+    def test_battery_from_newer_properties(self):
+        """Properties battery used when its timestamp is newer than snapshot.
+
+        This is the key fix: after RPT_STOP, the snapshot is stale (from
+        end of mowing) but properties push arrives with fresh charging data.
+        """
+        from custom_components.mammotion_lite.sensors import get_battery
+
+        data = make_data()
+        # Snapshot at T=1000 (stale), properties at T=2000 (fresh) -> properties wins
+        data.snapshot = make_snapshot(battery_level=64, timestamp_ms=1000)
+        data.properties = make_properties_message(battery=78, battery_time=2000)
+        assert get_battery(data) == 78
 
     def test_battery_from_snapshot_preferred(self):
-        """Snapshot battery_level is preferred when > 0."""
+        """Snapshot battery_level is preferred when > 0 and no properties."""
         from custom_components.mammotion_lite.sensors import get_battery
 
         data = make_data()

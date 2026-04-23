@@ -324,3 +324,47 @@ class TestFpvRefreshInterval:
         from custom_components.mammotion_lite.camera import _FPV_REFRESH_INTERVAL_S
 
         assert _FPV_REFRESH_INTERVAL_S == 30
+
+
+class TestServicesUseCurrentRuntimeData:
+    """Services must read entry.runtime_data at call time, not capture it at setup.
+
+    After a config entry reload (e.g. reconfigure credentials), the runtime_data
+    is replaced with a new MammotionLiteData containing a fresh client. Services
+    registered during the first setup must use the new data, not the old dead one.
+    """
+
+    async def test_start_video_uses_fresh_data_after_reload(self, hass: HomeAssistant):
+        """After reload, start_video should use the new client, not the old one."""
+        entry, client1, captured1, commands_mock1 = await _setup(hass)
+
+        # Record how many commands client1 received so far
+        calls_before = commands_mock1.device_agora_join_channel_with_position.call_count
+
+        # Simulate reload: unload then re-setup with a new client
+        await hass.config_entries.async_unload(entry.entry_id)
+
+        # Create a second mock client + commands
+        from tests.conftest import make_capturing_client
+        client2, captured2 = make_capturing_client()
+        commands_mock2 = MagicMock()
+        commands_mock2.device_agora_join_channel_with_position.return_value = b"\x00"
+
+        with patch(PATCH_CLIENT, return_value=client2), \
+             patch(PATCH_COMMAND, return_value=commands_mock2), \
+             patch(PATCH_SESSION):
+            await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+        assert entry.state == ConfigEntryState.LOADED
+
+        # Call start_video - it should use client2's commands, not client1's
+        await hass.services.async_call(DOMAIN, "start_video", blocking=True)
+        await hass.async_block_till_done()
+
+        # client2's commands should have been called
+        assert commands_mock2.device_agora_join_channel_with_position.call_count > 0, \
+            "New client's commands should be used after reload"
+        # client1's commands should NOT have received additional calls
+        assert commands_mock1.device_agora_join_channel_with_position.call_count == calls_before, \
+            "Old client's commands should not be called after reload"

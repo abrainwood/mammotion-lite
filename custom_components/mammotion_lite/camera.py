@@ -97,22 +97,27 @@ class MammotionCamera(Camera):
 async def _async_setup_services(
     hass: HomeAssistant, entry: MammotionLiteConfigEntry, camera: MammotionCamera
 ) -> None:
-    """Register services for the Agora JS card."""
-    data = entry.runtime_data
+    """Register services for the Agora JS card.
+
+    IMPORTANT: Services read entry.runtime_data at call time, not at setup time.
+    After a config entry reload (e.g. reconfigure), runtime_data is replaced with
+    a fresh client. Services must use the current data, not a stale reference.
+    """
     _stream_cache: dict[str, Any] = {}
     _fpv_task: asyncio.Task | None = None
 
-    async def _fpv_refresh_loop() -> None:
-        """Periodically send refresh_fpv to keep the mower's video encoder alive.
+    def _data() -> MammotionLiteData:
+        """Get current runtime data (fresh after reload)."""
+        return entry.runtime_data
 
-        The mower's video encoder automatically disables itself after ~60s
-        of inactivity. This loop re-enables it every 30s while the camera
-        is active.
-        """
+    async def _fpv_refresh_loop() -> None:
+        """Periodically send refresh_fpv to keep the mower's video encoder alive."""
+        data = _data()
         _LOGGER.debug("FPV refresh loop started for %s", data.device_name)
         try:
             while True:
                 await asyncio.sleep(_FPV_REFRESH_INTERVAL_S)
+                data = _data()  # Re-read in case of reload
                 handle = data.client.mower(data.device_name)
                 if handle is None:
                     continue
@@ -123,11 +128,12 @@ async def _async_setup_services(
                 except Exception:
                     _LOGGER.warning("FPV refresh failed for %s", data.device_name, exc_info=True)
         except asyncio.CancelledError:
-            _LOGGER.debug("FPV refresh loop cancelled for %s", data.device_name)
+            _LOGGER.debug("FPV refresh loop cancelled for %s", _data().device_name)
             raise
 
     async def handle_refresh_stream(call: ServiceCall) -> None:
         """Refresh stream subscription tokens from Mammotion cloud."""
+        data = _data()
         stream_data = await data.client.get_stream_subscription(
             data.device_name, data.iot_id
         )
@@ -140,6 +146,7 @@ async def _async_setup_services(
     async def handle_start_video(call: ServiceCall) -> None:
         """Tell the mower to join the Agora video channel and start FPV refresh."""
         nonlocal _fpv_task
+        data = _data()
         handle = data.client.mower(data.device_name)
         if handle is None:
             _LOGGER.warning("No mower handle for start_video")
@@ -161,13 +168,13 @@ async def _async_setup_services(
     async def handle_stop_video(call: ServiceCall) -> None:
         """Tell the mower to leave the Agora video channel and stop FPV refresh."""
         nonlocal _fpv_task
-        # Stop FPV refresh loop
         if _fpv_task and not _fpv_task.done():
             _fpv_task.cancel()
             _fpv_task = None
 
         camera.set_streaming(False)
 
+        data = _data()
         handle = data.client.mower(data.device_name)
         if handle is None:
             return
@@ -181,6 +188,7 @@ async def _async_setup_services(
     async def handle_get_tokens(call: ServiceCall) -> ServiceResponse:
         """Return Agora token data for the JS card."""
         if "data" not in _stream_cache:
+            data = _data()
             stream_data = await data.client.get_stream_subscription(
                 data.device_name, data.iot_id
             )

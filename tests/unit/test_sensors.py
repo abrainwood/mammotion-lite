@@ -253,6 +253,32 @@ class TestGetZoneHash:
         data.snapshot = make_snapshot(ub_zone_hash=0)
         assert get_zone_hash(data) is None
 
+    def test_zone_name_from_area_names(self):
+        """Returns human-readable zone name when area_name mapping exists."""
+        from custom_components.mammotion_lite.sensors import get_zone_name
+
+        data = make_data()
+        data.snapshot = make_snapshot(ub_zone_hash=123456789)
+        data.area_names = {123456789: "Backyard upper"}
+        assert get_zone_name(data) == "Backyard upper"
+
+    def test_zone_name_falls_back_to_hash(self):
+        """Returns hash as string when no name mapping exists."""
+        from custom_components.mammotion_lite.sensors import get_zone_name
+
+        data = make_data()
+        data.snapshot = make_snapshot(ub_zone_hash=987654321)
+        data.area_names = {}
+        assert get_zone_name(data) == "987654321"
+
+    def test_zone_name_none_when_no_zone(self):
+        """Returns None when no active zone."""
+        from custom_components.mammotion_lite.sensors import get_zone_name
+
+        data = make_data()
+        data.area_names = {123: "Front yard"}
+        assert get_zone_name(data) is None
+
     def test_zone_hash_none_when_no_snapshot(self):
         """Returns None when no snapshot available."""
         from custom_components.mammotion_lite.sensors import get_zone_hash

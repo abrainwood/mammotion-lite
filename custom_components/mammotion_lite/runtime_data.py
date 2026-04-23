@@ -26,6 +26,7 @@ class MammotionLiteData:
     last_event_label: str | None = None
     last_event_time: datetime | None = None
     last_data_update: datetime | None = None
+    area_names: dict[int, str] = field(default_factory=dict)
     _subscriptions: list[Any] = field(default_factory=list)
     _update_callbacks: list[Callable[[], None]] = field(default_factory=list)
     _keepalive_task: asyncio.Task | None = None

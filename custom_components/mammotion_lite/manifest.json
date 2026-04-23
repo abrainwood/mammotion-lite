@@ -6,7 +6,7 @@
   "config_flow": true,
   "dependencies": [],
   "requirements": [
-    "pymammotion==0.7.55",
+    "pymammotion==0.7.73",
     "websockets>=12.0",
     "sdp_transform>=1.1.0"
   ],

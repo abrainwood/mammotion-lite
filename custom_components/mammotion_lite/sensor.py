@@ -30,6 +30,7 @@ from .sensors import (
     get_last_event_attrs,
     get_last_event_time,
     get_progress,
+    get_zone_hash,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -88,6 +89,12 @@ SENSOR_DESCRIPTIONS: tuple[MammotionSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:grass",
         value_fn=get_blade_height,
+    ),
+    MammotionSensorDescription(
+        key="zone_hash",
+        translation_key="zone_hash",
+        icon="mdi:map-marker-radius",
+        value_fn=get_zone_hash,
     ),
     MammotionSensorDescription(
         key="last_event_time",

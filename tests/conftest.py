@@ -211,6 +211,7 @@ class FakeWorkData:
 
     area: int = 0
     progress: int = 0
+    ub_zone_hash: int = 0
 
 
 @dataclass
@@ -358,6 +359,7 @@ def make_snapshot(
     position_type: int = 0,
     wifi_rssi: int = 0,
     timestamp_ms: int | None = None,
+    ub_zone_hash: int = 0,
 ) -> FakeDeviceSnapshot:
     """Build a FakeDeviceSnapshot."""
     ts = (
@@ -374,7 +376,7 @@ def make_snapshot(
         blade_height=blade_height,
         raw=FakeRaw(
             report_data=FakeReportData(
-                work=FakeWorkData(area=area),
+                work=FakeWorkData(area=area, ub_zone_hash=ub_zone_hash),
                 connect=FakeConnectData(wifi_rssi=wifi_rssi),
             ),
             location=FakeLocation(

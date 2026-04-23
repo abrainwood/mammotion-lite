@@ -35,23 +35,27 @@ def _coords_from_snapshot(data: MammotionLiteData) -> tuple[float, float] | None
     try:
         raw = data.snapshot.raw
         lat = raw.location.device.latitude
-        _LOGGER.debug(
-            "Snapshot coords: lat=%s, lon=%s, position_type=%s",
-            lat, raw.location.device.longitude, raw.location.position_type,
-        )
         lon = raw.location.device.longitude
+        pos_type = raw.location.position_type
+
+        _LOGGER.debug(
+            "Snapshot coords: lat=%.6f, lon=%.6f, position_type=%s, work_zone=%s",
+            lat, lon, pos_type, getattr(raw.location, "work_zone", "N/A"),
+        )
 
         # position_type 0 = uninitialised, no GPS fix
-        if raw.location.position_type == 0:
+        if pos_type == 0:
+            _LOGGER.debug("Snapshot coords rejected: position_type=0")
             return None
 
         # Either coordinate near zero = likely uninitialised or unconverted radians
         if abs(lat) < MIN_PLAUSIBLE_DEGREES or abs(lon) < MIN_PLAUSIBLE_DEGREES:
+            _LOGGER.debug("Snapshot coords rejected: implausible (lat=%.6f, lon=%.6f)", lat, lon)
             return None
 
         # Sanity: valid WGS84 degrees have lat in [-90, 90], lon in [-180, 180]
-        # Values like -0.586 (radian for Sydney lat) would fail the MIN_PLAUSIBLE check above
         if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            _LOGGER.debug("Snapshot coords rejected: out of WGS84 range")
             return None
 
         return (lat, lon)

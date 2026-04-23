@@ -54,6 +54,9 @@
       },
       "last_event": {
         "name": "Last event"
+      },
+      "zone_hash": {
+        "name": "Mowing zone"
       }
     },
     "binary_sensor": {

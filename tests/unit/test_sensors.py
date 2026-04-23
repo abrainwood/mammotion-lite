@@ -234,6 +234,33 @@ class TestGetProgress:
         assert get_progress(data) is None
 
 
+class TestGetZoneHash:
+    """Test mowing zone hash extraction from snapshot."""
+
+    def test_zone_hash_from_snapshot(self):
+        """Returns the ub_zone_hash from snapshot work data during mowing."""
+        from custom_components.mammotion_lite.sensors import get_zone_hash
+
+        data = make_data()
+        data.snapshot = make_snapshot(ub_zone_hash=123456789)
+        assert get_zone_hash(data) == 123456789
+
+    def test_zone_hash_none_when_zero(self):
+        """Returns None when zone hash is 0 (no active zone)."""
+        from custom_components.mammotion_lite.sensors import get_zone_hash
+
+        data = make_data()
+        data.snapshot = make_snapshot(ub_zone_hash=0)
+        assert get_zone_hash(data) is None
+
+    def test_zone_hash_none_when_no_snapshot(self):
+        """Returns None when no snapshot available."""
+        from custom_components.mammotion_lite.sensors import get_zone_hash
+
+        data = make_data()
+        assert get_zone_hash(data) is None
+
+
 class TestGetLastEvent:
     """Test last event label extraction."""
 

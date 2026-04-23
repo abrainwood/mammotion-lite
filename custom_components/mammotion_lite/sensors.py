@@ -90,6 +90,19 @@ def get_progress(data: MammotionLiteData) -> int | None:
     return None
 
 
+def get_zone_hash(data: MammotionLiteData) -> int | None:
+    """Get the zone hash of the area currently being mowed.
+
+    The ub_zone_hash identifies which mowing zone is active. Returns None
+    when zero (no active zone) or when no snapshot is available.
+    """
+    if data.snapshot:
+        zone = data.snapshot.raw.report_data.work.ub_zone_hash
+        if zone != 0:
+            return zone
+    return None
+
+
 def get_last_event(data: MammotionLiteData) -> str | None:
     """Get last event label."""
     return data.last_event_label

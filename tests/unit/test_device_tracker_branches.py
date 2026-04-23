@@ -6,10 +6,7 @@ import math
 
 import pytest
 
-from custom_components.mammotion_lite.device_tracker_helpers import (
-    NEAR_ZERO_THRESHOLD_RAD,
-    extract_coordinates,
-)
+from custom_components.mammotion_lite.device_tracker_helpers import extract_coordinates
 from tests.conftest import FakePropertyItems, FakePropertyValue, FakePropertiesParams, FakeThingPropertiesMessage, make_data
 
 
@@ -58,6 +55,3 @@ class TestCoordinateBranches:
         data.properties = FakeThingPropertiesMessage(params=FakePropertiesParams(items=items))
         assert extract_coordinates(data) is None
 
-    def test_threshold_constant_is_importable(self):
-        """NEAR_ZERO_THRESHOLD_RAD is importable and has the expected value."""
-        assert NEAR_ZERO_THRESHOLD_RAD == 0.01

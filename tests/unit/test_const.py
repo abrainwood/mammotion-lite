@@ -27,7 +27,12 @@ def test_domain_is_mammotion_lite():
 
 
 def test_event_code_constants_exist():
-    """All known event code constants are defined."""
+    """All known event code constants match firmware wire values.
+
+    These are protocol-level values from the Mammotion mower firmware,
+    discovered via APK decompilation and live MQTT observation.
+    DO NOT change without verifying against actual device behavior.
+    """
     assert EVENT_TASK_STARTED == "1301"
     assert EVENT_TASK_CANCELLED == "1302"
     assert EVENT_RETURNING_TO_BASE == "1304"

@@ -69,7 +69,13 @@ def get_activity(data: MammotionLiteData) -> str | None:
         if activity:
             return activity
     if data.snapshot:
-        activity = data.snapshot.mowing_activity
+        try:
+            activity = data.snapshot.mowing_activity
+        except AttributeError:
+            # pymammotion >= 0.7.73 removed mowing_activity from snapshot
+            sys_status = data.snapshot.raw.report_data.dev.sys_status
+            _WORK_MODE_MAP = {0: "idle", 11: "ready", 13: "mowing", 14: "returning", 15: "charging", 19: "paused"}
+            activity = _WORK_MODE_MAP.get(sys_status, f"unknown({sys_status})")
         if activity == "unknown(0)":
             return "idle"
         return activity
@@ -163,8 +169,14 @@ def extract_wifi_rssi(data: MammotionLiteData) -> int | None:
 
 def get_blade_height(data: MammotionLiteData) -> int | None:
     """Get blade height from snapshot (preferred) or properties push (fallback)."""
-    if data.snapshot and data.snapshot.blade_height > 0:
-        return data.snapshot.blade_height
+    if data.snapshot:
+        try:
+            height = data.snapshot.blade_height
+        except AttributeError:
+            # pymammotion >= 0.7.73 removed blade_height from snapshot
+            height = data.snapshot.raw.report_data.work.knife_height
+        if height > 0:
+            return height
     if data.properties and data.properties.params.items.knifeHeight:
         return data.properties.params.items.knifeHeight.value
     return None

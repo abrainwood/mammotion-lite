@@ -173,6 +173,39 @@ class TestGetActivity:
         data.snapshot = make_snapshot(mowing_activity="unknown(0)")
         assert get_activity(data) == "idle"
 
+    def test_activity_from_raw_when_snapshot_lacks_attribute(self):
+        """pymammotion >= 0.7.73: falls back to raw.report_data.dev.sys_status.
+
+        When DeviceSnapshot no longer has mowing_activity, we read sys_status
+        from raw and map it to a human-readable string.
+        """
+        from custom_components.mammotion_lite.sensors import get_activity
+        from tests.conftest import FakeRaw, FakeReportData, FakeDevData
+
+        data = make_data()
+        # Create a snapshot-like object WITHOUT mowing_activity (simulating 0.7.73)
+        snapshot = type("Snapshot073", (), {
+            "raw": FakeRaw(report_data=FakeReportData(dev=FakeDevData(sys_status=13))),
+            "battery_level": 80,
+            "online": True,
+        })()
+        data.snapshot = snapshot
+        assert get_activity(data) == "mowing"
+
+    def test_activity_idle_from_raw_when_sys_status_zero(self):
+        """sys_status=0 maps to idle via the unknown(0) -> idle path."""
+        from custom_components.mammotion_lite.sensors import get_activity
+        from tests.conftest import FakeRaw, FakeReportData, FakeDevData
+
+        data = make_data()
+        snapshot = type("Snapshot073", (), {
+            "raw": FakeRaw(report_data=FakeReportData(dev=FakeDevData(sys_status=0))),
+            "battery_level": 80,
+            "online": True,
+        })()
+        data.snapshot = snapshot
+        assert get_activity(data) == "idle"
+
     def test_activity_fallback_to_device_state(self):
         """Falls back to properties deviceState when no event or snapshot."""
         from custom_components.mammotion_lite.sensors import get_activity
@@ -399,6 +432,21 @@ class TestGetBladeHeight:
 
         data = make_data()
         data.properties = make_properties_message(knife_height=45)
+        assert get_blade_height(data) == 45
+
+    def test_blade_height_from_raw_when_snapshot_lacks_attribute(self):
+        """pymammotion >= 0.7.73: falls back to raw.report_data.work.knife_height."""
+        from custom_components.mammotion_lite.sensors import get_blade_height
+        from tests.conftest import FakeRaw, FakeReportData, FakeWorkData
+
+        data = make_data()
+        # Create a snapshot-like object WITHOUT blade_height (simulating 0.7.73)
+        snapshot = type("Snapshot073", (), {
+            "raw": FakeRaw(report_data=FakeReportData(work=FakeWorkData(knife_height=45))),
+            "battery_level": 80,
+            "online": True,
+        })()
+        data.snapshot = snapshot
         assert get_blade_height(data) == 45
 
     def test_blade_height_none_when_no_data(self):

@@ -206,12 +206,21 @@ class FakeThingEventMessage:
 
 
 @dataclass
+class FakeDevData:
+    """Mimics the dev section of report data."""
+
+    battery_val: int = 0
+    sys_status: int = 0
+
+
+@dataclass
 class FakeWorkData:
     """Mimics the work section of report data."""
 
     area: int = 0
     progress: int = 0
     ub_zone_hash: int = 0
+    knife_height: int = 0
 
 
 @dataclass
@@ -242,6 +251,7 @@ class FakeConnectData:
 class FakeReportData:
     """Mimics MowerDevice.report_data."""
 
+    dev: FakeDevData = field(default_factory=FakeDevData)
     work: FakeWorkData = field(default_factory=FakeWorkData)
     connect: FakeConnectData = field(default_factory=FakeConnectData)
 

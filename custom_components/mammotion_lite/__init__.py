@@ -236,11 +236,10 @@ async def async_setup_entry(
 
         # Fetch area name list (one-time, maps zone hashes to human-readable names)
         try:
-            area_cmd = data.commands.get_area_name_list(device_id=data.iot_id)
-            await probe_handle.send_raw(area_cmd)
-            _LOGGER.debug("Area name list requested for %s", device_name)
-            # Give the response time to arrive and populate map.area_name
-            await asyncio.sleep(5)
+            await data.client.send_command_with_args(
+                data.device_name, "get_area_name_list", device_id=data.iot_id
+            )
+            _LOGGER.debug("Area name list fetched for %s", device_name)
             device = data.client.get_device_by_name(data.device_name)
             if device and device.map.area_name:
                 data.area_names = {area.hash: area.name for area in device.map.area_name}

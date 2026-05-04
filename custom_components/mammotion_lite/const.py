@@ -28,12 +28,14 @@ EVENT_DOCKED_CHARGING_ALT = "1207"
 
 # Human-readable labels for known event codes
 EVENT_CODE_LABELS: dict[str, str] = {
+    "1101": "No channel to charging area",
     EVENT_TASK_STARTED: "Task started",
+    "1203": "Navigation event",
     EVENT_TASK_CANCELLED: "Task cancelled",
     "1303": "Error (1303)",
     EVENT_RETURNING_TO_BASE: "Returning to base",
     EVENT_TASK_COMPLETED: "Task completed",
-    "1306": "Error (1306)",
+    "1306": "Return to base failed",
     EVENT_DOCKED_CHARGING: "Docked and charging",
     EVENT_STARTED_ALT: "Task started",
     EVENT_COMPLETED_ALT: "Arrived at base",

@@ -61,11 +61,28 @@ class MammotionDeviceTracker(TrackerEntity):
         self._update_coordinates()
         return self._longitude
 
+    # ~500m in degrees at mid-latitudes. Ignores jitter from
+    # competing coordinate sources (RTK base vs properties push)
+    # while still tracking real movement during mowing.
+    _POSITION_CHANGE_THRESHOLD_DEG = 0.005
+
     def _update_coordinates(self) -> None:
-        """Parse and cache coordinates from latest properties push."""
+        """Parse and cache coordinates from latest push data.
+
+        Applies hysteresis: small position changes (under ~500m) are
+        ignored to prevent the tracker from flipping between competing
+        coordinate sources when the mower is docked.
+        """
         result = extract_coordinates(self._data)
-        if result is not None:
-            self._latitude, self._longitude = result
+        if result is None:
+            return
+        new_lat, new_lon = result
+        if self._latitude is not None and self._longitude is not None:
+            dlat = abs(new_lat - self._latitude)
+            dlon = abs(new_lon - self._longitude)
+            if dlat < self._POSITION_CHANGE_THRESHOLD_DEG and dlon < self._POSITION_CHANGE_THRESHOLD_DEG:
+                return
+        self._latitude, self._longitude = new_lat, new_lon
 
     async def async_added_to_hass(self) -> None:
         """Register for push updates."""

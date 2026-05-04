@@ -402,3 +402,51 @@ class TestLastEventSensorFromEventPush:
 
         state = hass.states.get("sensor.luba_vslkjx_last_event_time")
         assert state.state != "unknown"
+
+
+class TestPerAreaMowHistorySensors:
+    """Test per-area 'last mow' timestamp sensors are created dynamically."""
+
+    async def test_area_sensors_created_after_area_names_load(self, hass: HomeAssistant):
+        """A timestamp sensor is created for each area in area_names."""
+        client, captured = make_capturing_client()
+        entry = await _setup_with_platforms(hass, client)
+
+        data = entry.runtime_data
+        data.area_names = {111: "Front lawn", 222: "Side strip"}
+
+        # Trigger area sensor creation (simulates what _initial_probe does)
+        data.create_area_sensors()
+        await hass.async_block_till_done()
+
+        front = hass.states.get("sensor.luba_vslkjx_last_mow_front_lawn")
+        side = hass.states.get("sensor.luba_vslkjx_last_mow_side_strip")
+        assert front is not None, "Front lawn sensor not created"
+        assert side is not None, "Side strip sensor not created"
+        assert front.state == "unknown"
+        assert side.state == "unknown"
+
+    async def test_area_sensor_updates_on_mow_complete(self, hass: HomeAssistant):
+        """Area sensor shows timestamp after mow completes in that zone."""
+        client, captured = make_capturing_client()
+        entry = await _setup_with_platforms(hass, client)
+
+        data = entry.runtime_data
+        data.area_names = {111: "Front lawn"}
+        data.create_area_sensors()
+        await hass.async_block_till_done()
+
+        # Mowing at 95% in zone 111
+        snapshot = make_snapshot(area=95 << 16, online=True)
+        snapshot.raw.work.zone_hashs = [111]
+        await captured.on_state_changed(snapshot)
+        await hass.async_block_till_done()
+
+        # Progress resets to 0 (mow complete)
+        snapshot = make_snapshot(area=0, online=True)
+        snapshot.raw.work.zone_hashs = [111]
+        await captured.on_state_changed(snapshot)
+        await hass.async_block_till_done()
+
+        state = hass.states.get("sensor.luba_vslkjx_last_mow_front_lawn")
+        assert state.state != "unknown"

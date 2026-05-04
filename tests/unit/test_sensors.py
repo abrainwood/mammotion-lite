@@ -24,6 +24,13 @@ class TestDispatchSensorUpdate:
         assert data.last_data_update is not None
         assert isinstance(data.last_data_update, datetime)
 
+    def test_sensor_dispatch_rounds_to_minute(self):
+        """dispatch_sensor_update rounds timestamp to the minute to avoid logbook spam."""
+        data = make_data()
+        data.dispatch_sensor_update()
+        assert data.last_data_update.second == 0
+        assert data.last_data_update.microsecond == 0
+
     def test_plain_dispatch_does_not_set_timestamp(self):
         """dispatch_update (events/status) does NOT set last_data_update."""
         data = make_data()
@@ -268,14 +275,18 @@ class TestGetProgress:
 
 
 class TestGetZoneHash:
-    """Test mowing zone hash extraction from snapshot."""
+    """Test mowing zone hash extraction.
 
-    def test_zone_hash_from_snapshot(self):
-        """Returns the ub_zone_hash from snapshot work data during mowing."""
+    Uses current_zone_hash (from device.location.work_zone) which matches
+    area_names keys, not ub_zone_hash which uses a different hash space.
+    """
+
+    def test_zone_hash_from_current_zone_hash(self):
+        """Returns current_zone_hash when set (from device.location.work_zone)."""
         from custom_components.mammotion_lite.sensors import get_zone_hash
 
         data = make_data()
-        data.snapshot = make_snapshot(ub_zone_hash=123456789)
+        data.current_zone_hash = 123456789
         assert get_zone_hash(data) == 123456789
 
     def test_zone_hash_none_when_zero(self):
@@ -283,7 +294,7 @@ class TestGetZoneHash:
         from custom_components.mammotion_lite.sensors import get_zone_hash
 
         data = make_data()
-        data.snapshot = make_snapshot(ub_zone_hash=0)
+        data.current_zone_hash = 0
         assert get_zone_hash(data) is None
 
     def test_zone_name_from_area_names(self):
@@ -291,18 +302,18 @@ class TestGetZoneHash:
         from custom_components.mammotion_lite.sensors import get_zone_name
 
         data = make_data()
-        data.snapshot = make_snapshot(ub_zone_hash=123456789)
+        data.current_zone_hash = 123456789
         data.area_names = {123456789: "Backyard upper"}
         assert get_zone_name(data) == "Backyard upper"
 
-    def test_zone_name_falls_back_to_hash(self):
-        """Returns hash as string when no name mapping exists."""
+    def test_zone_name_none_when_hash_unmatched(self):
+        """Returns None when zone hash doesn't match any known mowing area."""
         from custom_components.mammotion_lite.sensors import get_zone_name
 
         data = make_data()
-        data.snapshot = make_snapshot(ub_zone_hash=987654321)
-        data.area_names = {}
-        assert get_zone_name(data) == "987654321"
+        data.current_zone_hash = 987654321
+        data.area_names = {111: "Front lawn"}
+        assert get_zone_name(data) is None
 
     def test_zone_name_none_when_no_zone(self):
         """Returns None when no active zone."""
@@ -312,8 +323,8 @@ class TestGetZoneHash:
         data.area_names = {123: "Front yard"}
         assert get_zone_name(data) is None
 
-    def test_zone_hash_none_when_no_snapshot(self):
-        """Returns None when no snapshot available."""
+    def test_zone_hash_none_when_not_set(self):
+        """Returns None when current_zone_hash not set (default 0)."""
         from custom_components.mammotion_lite.sensors import get_zone_hash
 
         data = make_data()

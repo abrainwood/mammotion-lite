@@ -207,6 +207,96 @@ class TestMowLifecycle:
         assert RptAct.RPT_STOP in acts
         assert data.reporting_active is False
 
+    async def test_mow_complete_on_progress_drop(self, hass: HomeAssistant):
+        """Progress dropping from >=90% to 0 records mow completion timestamp."""
+        entry, client, captured = await _setup(hass)
+        data = entry.runtime_data
+        data.area_names = {999: "Front lawn"}
+
+        # Mowing at 95% in zone 999
+        snapshot = make_snapshot(area=95 << 16, online=True)
+        snapshot.raw.work.zone_hashs = [999]
+        await captured.on_state_changed(snapshot)
+        await hass.async_block_till_done()
+
+        # Progress resets to 0 (mow complete)
+        snapshot = make_snapshot(area=0, online=True)
+        snapshot.raw.work.zone_hashs = [999]
+        await captured.on_state_changed(snapshot)
+        await hass.async_block_till_done()
+
+        assert 999 in data.mow_history
+        from datetime import datetime, timezone
+        delta = datetime.now(timezone.utc) - data.mow_history[999]
+        assert delta.total_seconds() < 5
+
+    async def test_low_progress_drop_does_not_record(self, hass: HomeAssistant):
+        """Progress dropping from <90% to 0 does not record (mow was cancelled early)."""
+        entry, client, captured = await _setup(hass)
+        data = entry.runtime_data
+        data.area_names = {999: "Front lawn"}
+
+        # Mowing at 30%
+        snapshot = make_snapshot(area=30 << 16, online=True)
+        snapshot.raw.work.zone_hashs = [999]
+        await captured.on_state_changed(snapshot)
+        await hass.async_block_till_done()
+
+        # Progress resets to 0 (cancelled)
+        snapshot = make_snapshot(area=0, online=True)
+        snapshot.raw.work.zone_hashs = [999]
+        await captured.on_state_changed(snapshot)
+        await hass.async_block_till_done()
+
+        assert 999 not in data.mow_history
+
+    async def test_mow_complete_records_all_task_zones(self, hass: HomeAssistant):
+        """Multi-zone task records timestamps for all zones via work.zone_hashs."""
+        entry, client, captured = await _setup(hass)
+        data = entry.runtime_data
+        data.area_names = {111: "Front lawn", 222: "Side strip", 333: "Nature strip"}
+
+        # Mowing at 95% with zones 111 and 333 in the task
+        snapshot = make_snapshot(area=95 << 16, online=True)
+        snapshot.raw.work.zone_hashs = [111, 333]
+        await captured.on_state_changed(snapshot)
+        await hass.async_block_till_done()
+
+        # Progress resets to 0
+        snapshot = make_snapshot(area=0, online=True)
+        snapshot.raw.work.zone_hashs = [111, 333]
+        await captured.on_state_changed(snapshot)
+        await hass.async_block_till_done()
+
+        assert 111 in data.mow_history, "Front lawn should be recorded"
+        assert 333 in data.mow_history, "Nature strip should be recorded"
+        assert 222 not in data.mow_history, "Side strip was not in the task"
+
+    async def test_mow_complete_with_cleared_zone_hashs(self, hass: HomeAssistant):
+        """Realistic: zone_hashs is cleared when progress drops to 0.
+
+        In production, the mower clears zone_hashs when the task completes.
+        We must store zone_hashs WHILE mowing and use the stored value at completion.
+        """
+        entry, client, captured = await _setup(hass)
+        data = entry.runtime_data
+        data.area_names = {999: "Front lawn"}
+
+        # Mowing at 95% with zone 999 in the task
+        snapshot = make_snapshot(area=95 << 16, online=True)
+        snapshot.raw.work.zone_hashs = [999]
+        await captured.on_state_changed(snapshot)
+        await hass.async_block_till_done()
+
+        # Progress drops to 0 - but zone_hashs is now EMPTY (realistic behavior)
+        snapshot = make_snapshot(area=0, online=True)
+        snapshot.raw.work.zone_hashs = []  # Cleared at completion!
+        await captured.on_state_changed(snapshot)
+        await hass.async_block_till_done()
+
+        # Completion should still be recorded using the stored zone
+        assert 999 in data.mow_history, "Should record completion using stored zone_hashs"
+
     async def test_sensors_show_unknown_before_any_push(self, hass: HomeAssistant):
         """Before any push data, sensor entities render as 'unknown' in HA."""
         entry, client, captured = await _setup(hass)

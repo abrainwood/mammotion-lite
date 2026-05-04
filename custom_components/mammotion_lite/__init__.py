@@ -37,6 +37,9 @@ _REPORT_TIMEOUT_MS = 180_000
 _REPORT_NO_CHANGE_PERIOD_MS = 120_000
 _KEEPALIVE_INTERVAL_S = 120
 
+# Map sync retry backoff delays in seconds (after the initial attempt)
+_MAP_SYNC_BACKOFF_S = (60, 120, 300)
+
 PLATFORMS = [
     Platform.CAMERA,
     Platform.SENSOR,
@@ -146,6 +149,81 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     return True
 
 
+async def _load_area_names(data: MammotionLiteData, device_name: str) -> None:
+    """Load area names via map sync with retry on failure.
+
+    The saga's first step fetches user-defined names via broker.send_and_wait.
+    Later steps download boundary data whose hashes we use for fallback names.
+    area_name is volatile (saga retries can overwrite it), so we capture
+    entries into our own dict as they appear.
+
+    Retries with backoff if the saga fails (e.g. MQTT not ready at startup).
+    """
+    # Cloud transports need a longer saga timeout than the 3s default.
+    # TODO: remove once pymammotion ships transport-aware timeouts
+    # (see abrainwood/PyMammotion branch transport-aware-saga-timeout)
+    from pymammotion.messaging.map_saga import MapFetchSaga
+
+    MapFetchSaga.step_timeout = 15.0
+
+    max_attempts = 1 + len(_MAP_SYNC_BACKOFF_S)
+    for attempt in range(max_attempts):
+        try:
+            await data.client.start_map_sync(data.device_name)
+            _LOGGER.debug(
+                "Map sync enqueued for %s (attempt %d/%d)",
+                device_name, attempt + 1, max_attempts,
+            )
+            named: dict[int, str] = {}
+            area_hashes: set[int] = set()
+            for _ in range(180):
+                await asyncio.sleep(1)
+                device = data.client.get_device_by_name(data.device_name)
+                if not device:
+                    continue
+                for a in device.map.area_name:
+                    if a.hash not in named:
+                        named[a.hash] = a.name
+                area_hashes.update(getattr(device.map, "area", {}).keys())
+            # Merge: user names + fallbacks for unnamed areas
+            unnamed = sorted(area_hashes - set(named.keys()))
+            fallback_n = 1
+            merged = dict(named)
+            for h in unnamed:
+                merged[h] = f"Area {fallback_n}"
+                fallback_n += 1
+            if merged:
+                data.area_names = merged
+                _LOGGER.info(
+                    "[AREA] %s: area_name hashes=%s, map.area keys=%s, merged=%s",
+                    device_name,
+                    {a.hash: a.name for a in device.map.area_name} if device else {},
+                    list(area_hashes),
+                    data.area_names,
+                )
+                data.create_area_sensors()
+                return
+            _LOGGER.warning(
+                "No area data received for %s (attempt %d/%d)",
+                device_name, attempt + 1, max_attempts,
+            )
+        except Exception:
+            _LOGGER.warning(
+                "Map sync failed for %s (attempt %d/%d)",
+                device_name, attempt + 1, max_attempts, exc_info=True,
+            )
+
+        if attempt < len(_MAP_SYNC_BACKOFF_S):
+            delay = _MAP_SYNC_BACKOFF_S[attempt]
+            _LOGGER.info("Retrying map sync for %s in %ds", device_name, delay)
+            await asyncio.sleep(delay)
+
+    _LOGGER.warning(
+        "Map sync exhausted all retries for %s - area sensors unavailable until restart",
+        device_name,
+    )
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: MammotionLiteConfigEntry
 ) -> bool:
@@ -193,6 +271,7 @@ async def async_setup_entry(
     try:
         user_account = int(client.mammotion_http.login_info.userInformation.userAccount)
     except (ValueError, TypeError):
+        _LOGGER.warning("Could not parse user_account as int, using 0")
         user_account = 0
     commands = MammotionCommand(device_name, user_account=user_account)
 
@@ -211,43 +290,32 @@ async def async_setup_entry(
     # Initial state probe (self-expires after 30s)
     async def _initial_probe() -> None:
         await asyncio.sleep(10)
-        probe_handle = data.client.mower(data.device_name)
-        if probe_handle is None:
-            _LOGGER.debug("Initial probe: no mower handle")
-            return
-        try:
-            command = data.commands.request_iot_sys(
-                rpt_act=RptAct.RPT_START,
-                rpt_info_type=[
-                    RptInfoType.RIT_DEV_STA,
-                    RptInfoType.RIT_WORK,
-                    RptInfoType.RIT_DEV_LOCAL,
-                    RptInfoType.RIT_CONNECT,
-                ],
-                timeout=30_000,
-                period=10_000,
-                no_change_period=30_000,
-                count=3,
-            )
-            await probe_handle.send_raw(command)
-            _LOGGER.debug("Initial probe sent for %s", device_name)
-        except Exception:
-            _LOGGER.debug("Initial probe failed for %s", device_name)
 
-        # Fetch area name list (one-time, maps zone hashes to human-readable names)
-        try:
-            await data.client.send_command_with_args(
-                data.device_name, "get_area_name_list", device_id=data.iot_id
-            )
-            _LOGGER.debug("Area name list fetched for %s", device_name)
-            device = data.client.get_device_by_name(data.device_name)
-            if device and device.map.area_name:
-                data.area_names = {area.hash: area.name for area in device.map.area_name}
-                _LOGGER.debug("Area names loaded: %s", data.area_names)
-            else:
-                _LOGGER.debug("No area names received for %s", device_name)
-        except Exception:
-            _LOGGER.debug("Area name list fetch failed for %s", device_name)
+        # Probe needs a mower handle but map sync does not - keep them independent
+        probe_handle = data.client.mower(data.device_name)
+        if probe_handle is not None:
+            try:
+                command = data.commands.request_iot_sys(
+                    rpt_act=RptAct.RPT_START,
+                    rpt_info_type=[
+                        RptInfoType.RIT_DEV_STA,
+                        RptInfoType.RIT_WORK,
+                        RptInfoType.RIT_DEV_LOCAL,
+                        RptInfoType.RIT_CONNECT,
+                    ],
+                    timeout=30_000,
+                    period=10_000,
+                    no_change_period=30_000,
+                    count=3,
+                )
+                await probe_handle.send_raw(command)
+                _LOGGER.debug("Initial probe sent for %s", device_name)
+            except Exception:
+                _LOGGER.debug("Initial probe failed for %s", device_name)
+        else:
+            _LOGGER.debug("Initial probe: no mower handle for %s", device_name)
+
+        await _load_area_names(data, device_name)
 
     entry.async_create_background_task(
         hass, _initial_probe(), f"mammotion_lite_probe_{device_name}"
@@ -298,6 +366,56 @@ def _setup_subscriptions(
         data.snapshot = snapshot
         data.online = snapshot.online
         data.last_report_time = time.monotonic()
+
+        # Capture current zone from device.location.work_zone (matches area_names keys)
+        try:
+            device = client.get_device_by_name(device_name)
+            if device and device.location:
+                data.current_zone_hash = device.location.work_zone
+        except AttributeError:
+            _LOGGER.debug("No location.work_zone available for %s", device_name)
+
+        # Detect mow completion: progress drops from >=90% to 0
+        from .sensors import get_progress, get_zone_hash
+
+        progress = get_progress(data) or 0
+
+        # Store zone hashes while mowing (snapshot clears them at completion)
+        if progress > 0:
+            try:
+                work_zones = snapshot.raw.work.zone_hashs
+                if work_zones:
+                    # Filter out zeros and store the active zones
+                    active = [z for z in work_zones if z != 0]
+                    if active:
+                        data.active_zone_hashs = active
+                    _LOGGER.debug(
+                        "[WORK] %s: progress=%d%%, zone_hashs=%s, ub_zone_hash=%s",
+                        device_name, progress, work_zones,
+                        snapshot.raw.report_data.work.ub_zone_hash,
+                    )
+            except AttributeError:
+                pass
+
+        if data.last_progress >= 90 and progress == 0:
+            # Use stored zone_hashs (snapshot clears them at completion)
+            task_zones = data.active_zone_hashs.copy()
+            # Fall back to single zone hash
+            if not task_zones:
+                zone_hash = get_zone_hash(data)
+                if zone_hash:
+                    task_zones = [zone_hash]
+            for zh in task_zones:
+                if zh in data.area_names:
+                    data.mow_history[zh] = datetime.now(timezone.utc)
+                    _LOGGER.info(
+                        "Mow completed in %s for %s",
+                        data.area_names[zh], device_name,
+                    )
+            # Clear stored zones after recording
+            data.active_zone_hashs = []
+        data.last_progress = progress
+
         data.dispatch_sensor_update()
 
     async def _on_event(event) -> None:
@@ -311,6 +429,7 @@ def _setup_subscriptions(
         data.last_event_code = code
         data.last_event_label = get_event_label(code)
         data.last_event_time = datetime.now(timezone.utc)
+
         data.dispatch_update()
         await _handle_rpt_trigger(data, code)
 
@@ -362,6 +481,7 @@ async def _cloud_retry(hass: HomeAssistant, entry: MammotionLiteConfigEntry) -> 
                     data.client.mammotion_http.login_info.userInformation.userAccount
                 )
             except (ValueError, TypeError):
+                _LOGGER.warning("Could not parse user_account as int during retry, using 0")
                 user_account = 0
             data.commands = MammotionCommand(data.device_name, user_account=user_account)
             _setup_subscriptions(data, data.client, data.device_name)

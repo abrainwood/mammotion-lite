@@ -236,6 +236,7 @@ class FakeLocation:
     """Mimics pymammotion.data.model.location.Location."""
 
     device: FakeLocationPoint = field(default_factory=FakeLocationPoint)
+    RTK: FakeLocationPoint = field(default_factory=FakeLocationPoint)
     position_type: int = 0
 
 
@@ -257,11 +258,19 @@ class FakeReportData:
 
 
 @dataclass
+class FakeWork:
+    """Mimics pymammotion.data.model.work.CurrentTaskSettings."""
+
+    zone_hashs: list[int] = field(default_factory=list)
+
+
+@dataclass
 class FakeRaw:
     """Mimics DeviceSnapshot.raw (MowerDevice)."""
 
     report_data: FakeReportData = field(default_factory=FakeReportData)
     location: FakeLocation = field(default_factory=FakeLocation)
+    work: FakeWork = field(default_factory=FakeWork)
 
 
 @dataclass
@@ -445,6 +454,11 @@ def make_mock_client(
     client.subscribe_device_event = MagicMock(return_value=FakeSubscription())
     client.setup_device_watchers = MagicMock()
     client.teardown_device_watchers = MagicMock()
+
+    # Map sync
+    client.start_map_sync = AsyncMock()
+    client.start_area_name_sync = AsyncMock()
+    client.get_device_by_name = MagicMock(return_value=None)
 
     # Stop
     client.stop = AsyncMock()

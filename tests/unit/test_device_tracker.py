@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 
 import pytest
@@ -135,3 +136,137 @@ class TestExtractCoordinates:
         # Should be somewhere in Sydney area
         assert -34.5 < lat < -33.0
         assert 150.0 < lon < 152.0
+
+
+class TestCoordinateHysteresis:
+    """Small coordinate changes should not update the tracker position."""
+
+    def test_small_position_change_ignored(self):
+        """Position change under threshold does not update cached coordinates."""
+        from custom_components.mammotion_lite.device_tracker import MammotionDeviceTracker
+
+        data = make_data()
+        tracker = MammotionDeviceTracker(data, "test_entry")
+
+        # First position: RTK base
+        data.snapshot = make_snapshot(latitude=-33.5817, longitude=150.6957, position_type=5)
+        tracker._update_coordinates()
+        assert tracker._latitude == pytest.approx(-33.5817, abs=0.001)
+
+        # Second position: ~250m east (properties push) - should be ignored
+        data.snapshot = None
+        data.properties = make_properties_message(
+            coordinate={"lat": -33.5814 * math.pi / 180, "lon": 150.6982 * math.pi / 180}
+        )
+        tracker._update_coordinates()
+        # Should still be the original position
+        assert tracker._longitude == pytest.approx(150.6957, abs=0.001)
+
+    def test_large_position_change_accepted(self):
+        """Position change over threshold updates cached coordinates."""
+        from custom_components.mammotion_lite.device_tracker import MammotionDeviceTracker
+
+        data = make_data()
+        tracker = MammotionDeviceTracker(data, "test_entry")
+
+        # First position
+        data.snapshot = make_snapshot(latitude=-33.5817, longitude=150.6957, position_type=5)
+        tracker._update_coordinates()
+
+        # Second position: 1km away - should update
+        data.snapshot = make_snapshot(latitude=-33.590, longitude=150.700, position_type=5)
+        tracker._update_coordinates()
+        assert tracker._latitude == pytest.approx(-33.590, abs=0.001)
+
+
+class TestRTKBaseFallback:
+    """When device coords are garbage but RTK base has valid radians, use RTK base."""
+
+    def test_rtk_base_used_when_device_coords_implausible(self):
+        """RTK base radians converted to degrees when device coords are near-zero."""
+        data = make_data()
+        # Device coords near-zero (converter uninitialised), but RTK base has valid radians
+        snapshot = make_snapshot(latitude=-0.00005, longitude=0.000171, position_type=5)
+        # Sydney RTK base in radians
+        snapshot.raw.location.RTK.latitude = -0.5911
+        snapshot.raw.location.RTK.longitude = 2.6384
+        data.snapshot = snapshot
+        result = extract_coordinates(data)
+        assert result is not None
+        lat, lon = result
+        assert lat == pytest.approx(-33.87, abs=0.2)
+        assert lon == pytest.approx(151.2, abs=0.2)
+
+    def test_rtk_base_zero_does_not_fallback(self):
+        """When both device coords and RTK base are zero, returns None."""
+        data = make_data()
+        snapshot = make_snapshot(latitude=-0.00005, longitude=0.000171, position_type=5)
+        snapshot.raw.location.RTK.latitude = 0.0
+        snapshot.raw.location.RTK.longitude = 0.0
+        data.snapshot = snapshot
+        assert extract_coordinates(data) is None
+
+
+class TestCoordinateLogDeduplication:
+    """Repeated invalid coordinates should not spam the log."""
+
+    def test_repeated_implausible_coords_log_once(self, caplog):
+        """Same implausible coordinates logged only on first call."""
+        import custom_components.mammotion_lite.device_tracker_helpers as dth
+        dth._last_snapshot_rejection = None  # reset state
+
+        data = make_data()
+        data.snapshot = make_snapshot(latitude=-0.00005, longitude=0.000171, position_type=5)
+
+        with caplog.at_level(logging.DEBUG, logger="custom_components.mammotion_lite.device_tracker_helpers"):
+            extract_coordinates(data)
+            first_count = len(caplog.records)
+
+            caplog.clear()
+            extract_coordinates(data)
+            second_count = len(caplog.records)
+
+        assert first_count > 0, "First call should produce log output"
+        assert second_count == 0, "Repeated call with same coords should not log"
+
+    def test_changed_coords_log_again(self, caplog):
+        """When coordinates change, rejection is logged again."""
+        import custom_components.mammotion_lite.device_tracker_helpers as dth
+        dth._last_snapshot_rejection = None  # reset state
+
+        data = make_data()
+        data.snapshot = make_snapshot(latitude=-0.00005, longitude=0.000171, position_type=5)
+
+        with caplog.at_level(logging.DEBUG, logger="custom_components.mammotion_lite.device_tracker_helpers"):
+            extract_coordinates(data)
+            caplog.clear()
+
+            # Change coordinates
+            data.snapshot = make_snapshot(latitude=-0.001, longitude=0.002, position_type=5)
+            extract_coordinates(data)
+
+        assert len(caplog.records) > 0, "Changed coords should produce new log output"
+
+    def test_valid_coords_clear_rejection_state(self, caplog):
+        """After valid coordinates, a subsequent rejection logs again."""
+        import custom_components.mammotion_lite.device_tracker_helpers as dth
+        dth._last_snapshot_rejection = None
+
+        data = make_data()
+
+        with caplog.at_level(logging.DEBUG, logger="custom_components.mammotion_lite.device_tracker_helpers"):
+            # First: implausible coords (rejected, logged)
+            data.snapshot = make_snapshot(latitude=-0.00005, longitude=0.000171, position_type=5)
+            extract_coordinates(data)
+            caplog.clear()
+
+            # Second: valid coords (accepted, clears rejection state)
+            data.snapshot = make_snapshot(latitude=-33.87, longitude=151.21, position_type=5)
+            extract_coordinates(data)
+            caplog.clear()
+
+            # Third: same implausible coords as first (should log again)
+            data.snapshot = make_snapshot(latitude=-0.00005, longitude=0.000171, position_type=5)
+            extract_coordinates(data)
+
+        assert len(caplog.records) > 0, "Rejection after valid coords should log again"

@@ -99,13 +99,11 @@ def get_progress(data: MammotionLiteData) -> int | None:
 def get_zone_hash(data: MammotionLiteData) -> int | None:
     """Get the zone hash of the area currently being mowed.
 
-    The ub_zone_hash identifies which mowing zone is active. Returns None
-    when zero (no active zone) or when no snapshot is available.
+    Uses current_zone_hash (from device.location.work_zone) which matches
+    area_names keys. Returns None when zero (no active zone).
     """
-    if data.snapshot:
-        zone = data.snapshot.raw.report_data.work.ub_zone_hash
-        if zone != 0:
-            return zone
+    if data.current_zone_hash != 0:
+        return data.current_zone_hash
     return None
 
 
@@ -113,13 +111,13 @@ def get_zone_name(data: MammotionLiteData) -> str | None:
     """Get the human-readable name of the zone currently being mowed.
 
     Uses the area_names mapping (populated on startup via get_area_name_list).
-    Falls back to the raw hash as a string if no name is available.
-    Returns None when no zone is active.
+    Returns None when the hash doesn't match a known mowing area (e.g.
+    the mower is in a channel or no-go zone) or when no zone is active.
     """
     zone_hash = get_zone_hash(data)
     if zone_hash is None:
         return None
-    return data.area_names.get(zone_hash, str(zone_hash))
+    return data.area_names.get(zone_hash)
 
 
 def get_last_event(data: MammotionLiteData) -> str | None:

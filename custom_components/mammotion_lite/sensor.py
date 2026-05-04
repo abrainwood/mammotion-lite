@@ -120,6 +120,8 @@ async def async_setup_entry(
 ) -> None:
     """Set up Mammotion sensors."""
     data = entry.runtime_data
+    data._add_entities_cb = async_add_entities
+    data._entry_id = entry.entry_id
     async_add_entities(
         MammotionPushSensor(data, description, entry.entry_id)
         for description in SENSOR_DESCRIPTIONS
@@ -159,6 +161,50 @@ class MammotionPushSensor(SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         """Register for push updates when added to HA."""
+
+        @callback
+        def _on_update() -> None:
+            self.async_write_ha_state()
+
+        self._unregister = self._data.register_update_callback(_on_update)
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Unregister from push updates."""
+        if self._unregister:
+            self._unregister()
+            self._unregister = None
+
+
+class MammotionAreaSensor(SensorEntity):
+    """Per-area 'last mow' timestamp sensor."""
+
+    _attr_has_entity_name = True
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_icon = "mdi:grass"
+
+    def __init__(
+        self,
+        data: MammotionLiteData,
+        area_hash: int,
+        area_name: str,
+        entry_id: str,
+    ) -> None:
+        """Initialize the area sensor."""
+        self._data = data
+        self._area_hash = area_hash
+        slug = area_name.lower().replace(" ", "_")
+        self._attr_unique_id = f"{DOMAIN}_{data.device_name}_last_mow_{slug}"
+        self._attr_name = f"Last mow - {area_name}"
+        self._attr_device_info = device_info(entry_id, data.device_name)
+        self._unregister: Callable[[], None] | None = None
+
+    @property
+    def native_value(self) -> Any:
+        """Return the last mow timestamp for this area."""
+        return self._data.mow_history.get(self._area_hash)
+
+    async def async_added_to_hass(self) -> None:
+        """Register for push updates."""
 
         @callback
         def _on_update() -> None:

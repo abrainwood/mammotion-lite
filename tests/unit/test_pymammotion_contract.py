@@ -155,6 +155,11 @@ class TestMammotionClientContract:
         from pymammotion.client import MammotionClient
         assert hasattr(MammotionClient, "get_device_by_name")
 
+    def test_has_start_map_sync(self):
+        """We call start_map_sync to fetch map data + area names via saga."""
+        from pymammotion.client import MammotionClient
+        assert hasattr(MammotionClient, "start_map_sync")
+
     def test_has_stop(self):
         from pymammotion.client import MammotionClient
         assert hasattr(MammotionClient, "stop")

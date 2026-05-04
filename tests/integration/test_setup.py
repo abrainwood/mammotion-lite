@@ -156,6 +156,263 @@ class TestInitialProbe:
         assert RptInfoType.RIT_CONNECT in info_types
 
 
+class TestAreaNamesFetch:
+    """Test area names are populated on runtime_data during startup."""
+
+    async def test_area_names_populated_on_startup(self, hass: HomeAssistant):
+        """Area names from the device end up on runtime_data.area_names."""
+        from dataclasses import dataclass, field
+
+        @dataclass
+        class _AreaName:
+            hash: int = 0
+            name: str = ""
+
+        @dataclass
+        class _Map:
+            area_name: list = field(default_factory=list)
+
+        @dataclass
+        class _FakeDevice:
+            map: _Map = field(default_factory=_Map)
+
+        client = make_mock_client()
+        device_with_names = _FakeDevice(
+            map=_Map(area_name=[
+                _AreaName(hash=111, name="Front lawn"),
+                _AreaName(hash=222, name="Back lawn"),
+            ])
+        )
+        client.get_device_by_name = MagicMock(return_value=device_with_names)
+
+        entry = _make_config_entry(hass)
+        entry.add_to_hass(hass)
+
+        with _patches(client):
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                await hass.config_entries.async_setup(entry.entry_id)
+                await hass.async_block_till_done()
+
+        data = entry.runtime_data
+        assert data.area_names == {111: "Front lawn", 222: "Back lawn"}
+
+    async def test_unnamed_areas_get_fallback_names(self, hass: HomeAssistant):
+        """Areas in map.area without names in area_name get 'Area N' fallbacks."""
+        from dataclasses import dataclass, field
+
+        @dataclass
+        class _AreaName:
+            hash: int = 0
+            name: str = ""
+
+        @dataclass
+        class _Map:
+            area_name: list = field(default_factory=list)
+            area: dict = field(default_factory=dict)
+
+        @dataclass
+        class _FakeDevice:
+            map: _Map = field(default_factory=_Map)
+
+        client = make_mock_client()
+        # 2 named areas + 3 unnamed (only in map.area, not in area_name)
+        device = _FakeDevice(
+            map=_Map(
+                area_name=[
+                    _AreaName(hash=111, name="Front lawn"),
+                    _AreaName(hash=222, name="Side strip"),
+                ],
+                area={111: "boundary_data", 222: "boundary_data",
+                      333: "boundary_data", 444: "boundary_data",
+                      555: "boundary_data"},
+            )
+        )
+        client.get_device_by_name = MagicMock(return_value=device)
+
+        entry = _make_config_entry(hass)
+        entry.add_to_hass(hass)
+
+        with _patches(client):
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                await hass.config_entries.async_setup(entry.entry_id)
+                await hass.async_block_till_done()
+
+        data = entry.runtime_data
+        assert data.area_names[111] == "Front lawn"
+        assert data.area_names[222] == "Side strip"
+        # Unnamed areas should get fallback names
+        assert 333 in data.area_names
+        assert 444 in data.area_names
+        assert 555 in data.area_names
+        # Fallback names should be "Area 1", "Area 2", "Area 3"
+        fallback_names = sorted([data.area_names[h] for h in [333, 444, 555]])
+        assert fallback_names == ["Area 1", "Area 2", "Area 3"]
+
+    async def test_area_names_timeout_no_crash(self, hass: HomeAssistant):
+        """Area names timeout when device never returns names."""
+        from dataclasses import dataclass, field
+
+        @dataclass
+        class _Map:
+            area_name: list = field(default_factory=list)
+
+        @dataclass
+        class _FakeDevice:
+            map: _Map = field(default_factory=_Map)
+
+        client = make_mock_client()
+        # Device exists but area_name stays empty
+        client.get_device_by_name = MagicMock(return_value=_FakeDevice())
+
+        entry = _make_config_entry(hass)
+        entry.add_to_hass(hass)
+
+        with _patches(client):
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                await hass.config_entries.async_setup(entry.entry_id)
+                await hass.async_block_till_done()
+
+        data = entry.runtime_data
+        assert data.area_names == {}
+        assert entry.state == ConfigEntryState.LOADED
+
+    async def test_area_names_device_not_found(self, hass: HomeAssistant):
+        """Area names timeout gracefully when get_device_by_name returns None."""
+        client = make_mock_client()
+        client.get_device_by_name = MagicMock(return_value=None)
+
+        entry = _make_config_entry(hass)
+        entry.add_to_hass(hass)
+
+        with _patches(client):
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                await hass.config_entries.async_setup(entry.entry_id)
+                await hass.async_block_till_done()
+
+        data = entry.runtime_data
+        assert data.area_names == {}
+        assert entry.state == ConfigEntryState.LOADED
+
+    async def test_map_sync_exception_no_crash(self, hass: HomeAssistant):
+        """Map sync exception is caught, integration stays loaded."""
+        client = make_mock_client()
+        client.start_map_sync = AsyncMock(side_effect=Exception("MQTT not ready"))
+
+        entry = _make_config_entry(hass)
+        entry.add_to_hass(hass)
+
+        with _patches(client):
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                await hass.config_entries.async_setup(entry.entry_id)
+                await hass.async_block_till_done()
+
+        data = entry.runtime_data
+        assert data.area_names == {}
+        assert entry.state == ConfigEntryState.LOADED
+
+
+class TestMapSyncRetry:
+    """Test map sync retry behavior when saga fails."""
+
+    async def test_retries_on_saga_failure_and_succeeds(self, hass: HomeAssistant):
+        """Map sync retries after saga failure and loads area names on retry."""
+        from dataclasses import dataclass, field
+
+        @dataclass
+        class _AreaName:
+            hash: int = 0
+            name: str = ""
+
+        @dataclass
+        class _Map:
+            area_name: list = field(default_factory=list)
+
+        @dataclass
+        class _FakeDevice:
+            map: _Map = field(default_factory=_Map)
+
+        client = make_mock_client()
+        device_with_names = _FakeDevice(
+            map=_Map(area_name=[
+                _AreaName(hash=111, name="Front lawn"),
+            ])
+        )
+
+        # First call raises (saga failure), second succeeds
+        client.start_map_sync = AsyncMock(
+            side_effect=[Exception("Saga failed"), None]
+        )
+        client.get_device_by_name = MagicMock(return_value=device_with_names)
+
+        entry = _make_config_entry(hass)
+        entry.add_to_hass(hass)
+
+        with _patches(client):
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                await hass.config_entries.async_setup(entry.entry_id)
+                await hass.async_block_till_done()
+
+        data = entry.runtime_data
+        assert data.area_names == {111: "Front lawn"}
+        assert client.start_map_sync.call_count == 2
+
+    async def test_exhausts_all_retries_gracefully(self, hass: HomeAssistant):
+        """All retry attempts fail without crashing. Tries 4 times total."""
+        client = make_mock_client()
+        client.start_map_sync = AsyncMock(side_effect=Exception("MQTT not ready"))
+
+        entry = _make_config_entry(hass)
+        entry.add_to_hass(hass)
+
+        with _patches(client):
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                await hass.config_entries.async_setup(entry.entry_id)
+                await hass.async_block_till_done()
+
+        data = entry.runtime_data
+        assert data.area_names == {}
+        assert entry.state == ConfigEntryState.LOADED
+        # 1 initial + 3 retries = 4 total attempts
+        assert client.start_map_sync.call_count == 1 + 3
+
+    async def test_no_mower_handle_does_not_block_map_sync(self, hass: HomeAssistant):
+        """Map sync runs even when mower handle is unavailable for probe."""
+        from dataclasses import dataclass, field
+
+        @dataclass
+        class _AreaName:
+            hash: int = 0
+            name: str = ""
+
+        @dataclass
+        class _Map:
+            area_name: list = field(default_factory=list)
+
+        @dataclass
+        class _FakeDevice:
+            map: _Map = field(default_factory=_Map)
+
+        client = make_mock_client(mower_handle=None)
+        device_with_names = _FakeDevice(
+            map=_Map(area_name=[
+                _AreaName(hash=111, name="Front lawn"),
+            ])
+        )
+        client.get_device_by_name = MagicMock(return_value=device_with_names)
+
+        entry = _make_config_entry(hass)
+        entry.add_to_hass(hass)
+
+        with _patches(client):
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                await hass.config_entries.async_setup(entry.entry_id)
+                await hass.async_block_till_done()
+
+        data = entry.runtime_data
+        assert data.area_names == {111: "Front lawn"}
+        client.start_map_sync.assert_called()
+
+
 class TestAsyncUnloadEntry:
     """Test async_unload_entry."""
 

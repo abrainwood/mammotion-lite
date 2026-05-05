@@ -11,6 +11,7 @@ from homeassistant.const import CONF_PASSWORD
 from homeassistant.data_entry_flow import AbortFlow
 from homeassistant.helpers import aiohttp_client
 from pymammotion.client import MammotionClient
+from pymammotion.transport.base import LoginFailedError
 from pymammotion.utility.device_type import DeviceType
 
 from .const import CONF_ACCOUNTNAME, CONF_DEVICE_IOT_ID, CONF_DEVICE_NAME, DOMAIN
@@ -87,6 +88,13 @@ class MammotionLiteConfigFlow(ConfigFlow, domain=DOMAIN):
 
             except AbortFlow:
                 raise
+            except LoginFailedError as err:
+                _LOGGER.error(
+                    "Mammotion cloud rejected login for %s: %s",
+                    account,
+                    err.reason,
+                )
+                errors["base"] = "invalid_auth"
             except Exception:
                 _LOGGER.exception("Failed to connect to Mammotion cloud")
                 errors["base"] = "cannot_connect"
@@ -162,6 +170,13 @@ class MammotionLiteConfigFlow(ConfigFlow, domain=DOMAIN):
                     )
             except AbortFlow:
                 raise
+            except LoginFailedError as err:
+                _LOGGER.error(
+                    "Mammotion cloud rejected login for %s: %s",
+                    account,
+                    err.reason,
+                )
+                errors["base"] = "invalid_auth"
             except Exception:
                 _LOGGER.exception("Failed to connect to Mammotion cloud")
                 errors["base"] = "cannot_connect"

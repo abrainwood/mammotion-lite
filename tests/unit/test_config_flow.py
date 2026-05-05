@@ -121,6 +121,56 @@ async def test_login_failure_shows_cannot_connect(hass: HomeAssistant, flow):
     assert result["errors"]["base"] == "cannot_connect"
 
 
+async def test_login_failed_error_shows_invalid_auth(hass: HomeAssistant, flow):
+    """LoginFailedError (auth rejection) shows invalid_auth, not cannot_connect.
+
+    When Mammotion's API rejects credentials (Access denied, wrong password,
+    account locked), we should show invalid_auth - not cannot_connect which
+    implies a network issue.
+    """
+    from pymammotion.transport.base import LoginFailedError
+
+    client = MagicMock()
+    client.login_and_initiate_cloud = AsyncMock(
+        side_effect=LoginFailedError("user@example.com", "Access denied")
+    )
+    client.stop = AsyncMock()
+
+    with patch(PATCH_CLIENT, return_value=client):
+        result = await flow()
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_ACCOUNTNAME: "user@example.com", CONF_PASSWORD: "wrong"},
+        )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"]["base"] == "invalid_auth"
+
+
+async def test_login_failed_error_logs_reason(hass: HomeAssistant, flow, caplog):
+    """LoginFailedError logs the specific reason from the API."""
+    import logging
+    from pymammotion.transport.base import LoginFailedError
+
+    client = MagicMock()
+    client.login_and_initiate_cloud = AsyncMock(
+        side_effect=LoginFailedError("user@example.com", "Account locked for 30 minutes")
+    )
+    client.stop = AsyncMock()
+
+    with (
+        patch(PATCH_CLIENT, return_value=client),
+        caplog.at_level(logging.ERROR),
+    ):
+        result = await flow()
+        await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_ACCOUNTNAME: "user@example.com", CONF_PASSWORD: "wrong"},
+        )
+
+    assert "Account locked for 30 minutes" in caplog.text
+
+
 async def test_login_success_but_no_session_shows_invalid_auth(hass: HomeAssistant, flow):
     """Login succeeds but no login_info means invalid credentials."""
     client = make_mock_client()
@@ -325,6 +375,42 @@ async def test_reconfigure_invalid_auth_shows_error(hass: HomeAssistant):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
             {CONF_ACCOUNTNAME: "bad@example.com", CONF_PASSWORD: "wrong"},
+        )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"]["base"] == "invalid_auth"
+
+
+async def test_reconfigure_login_failed_error_shows_invalid_auth(hass: HomeAssistant):
+    """LoginFailedError during reconfigure shows invalid_auth, not cannot_connect.
+
+    When Mammotion's API rejects credentials in the reconfigure flow, we should
+    show invalid_auth - not cannot_connect which implies a network issue.
+    """
+    from pymammotion.transport.base import LoginFailedError
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_ACCOUNTNAME: "old@example.com",
+            CONF_PASSWORD: "oldpass",
+            CONF_DEVICE_NAME: "Luba-VSLKJX",
+            CONF_DEVICE_IOT_ID: "abc123",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    client = MagicMock()
+    client.login_and_initiate_cloud = AsyncMock(
+        side_effect=LoginFailedError("user@example.com", "Access denied")
+    )
+    client.stop = AsyncMock()
+
+    with patch(PATCH_CLIENT, return_value=client):
+        result = await entry.start_reconfigure_flow(hass)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_ACCOUNTNAME: "user@example.com", CONF_PASSWORD: "wrong"},
         )
 
     assert result["type"] == FlowResultType.FORM

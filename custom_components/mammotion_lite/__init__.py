@@ -16,6 +16,7 @@ from pymammotion.client import MammotionClient
 from pymammotion.data.mqtt.status import StatusType
 from pymammotion.mammotion.commands.mammotion_command import MammotionCommand
 from pymammotion.proto import RptAct, RptInfoType
+from pymammotion.transport.base import LoginFailedError
 
 from .const import (
     CONF_ACCOUNTNAME,
@@ -240,6 +241,19 @@ async def async_setup_entry(
 
     try:
         await client.login_and_initiate_cloud(account, password, session)
+    except LoginFailedError as err:
+        _LOGGER.error(
+            "Mammotion cloud auth failed for %s: %s", device_name, err.reason,
+        )
+        # Auth failures don't self-heal - retrying could lock the account further
+        data = MammotionLiteData(
+            client=client,
+            commands=MammotionCommand(device_name, user_account=0),
+            device_name=device_name,
+            iot_id=iot_id,
+        )
+        entry.runtime_data = data
+        return True
     except Exception:
         _LOGGER.warning(
             "Failed to connect to Mammotion cloud for %s - will retry", device_name,

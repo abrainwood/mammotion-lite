@@ -383,52 +383,38 @@ def _setup_subscriptions(
         data.online = snapshot.online
         data.last_report_time = time.monotonic()
 
-        # Capture current zone from device.location.work_zone (matches area_names keys)
-        try:
-            device = client.get_device_by_name(device_name)
-            if device and device.location:
-                data.current_zone_hash = device.location.work_zone
-        except AttributeError:
-            _LOGGER.debug("No location.work_zone available for %s", device_name)
+        # Capture current zone from device.location.work_zone. This is the only
+        # signal we get for which zone the mower is actively in - pymammotion's
+        # device.work.zone_hashs is never populated with the active task's zones.
+        device = client.get_device_by_name(device_name)
+        if device is not None and device.location is not None:
+            data.current_zone_hash = device.location.work_zone
 
         # Detect mow completion: progress drops from >=90% to 0
-        from .sensors import get_progress, get_zone_hash
+        from .sensors import get_progress
 
         progress = get_progress(data) or 0
 
-        # Store zone hashes while mowing (snapshot clears them at completion)
-        if progress > 0:
-            try:
-                work_zones = snapshot.raw.work.zone_hashs
-                if work_zones:
-                    # Filter out zeros and store the active zones
-                    active = [z for z in work_zones if z != 0]
-                    if active:
-                        data.active_zone_hashs = active
-                    _LOGGER.debug(
-                        "[WORK] %s: progress=%d%%, zone_hashs=%s, ub_zone_hash=%s",
-                        device_name, progress, work_zones,
-                        snapshot.raw.report_data.work.ub_zone_hash,
-                    )
-            except AttributeError:
-                pass
+        # Accumulate every non-zero zone observed during the mow. By the time
+        # progress drops to 0 the mower has typically exited the last zone, so
+        # the live current_zone_hash would be 0 - we need the history.
+        if progress > 0 and data.current_zone_hash:
+            if data.current_zone_hash not in data.active_zone_hashs:
+                data.active_zone_hashs.append(data.current_zone_hash)
+                _LOGGER.debug(
+                    "[ZONE] %s: progress=%d%% entered zone %s (active=%s)",
+                    device_name, progress, data.current_zone_hash,
+                    data.active_zone_hashs,
+                )
 
         if data.last_progress >= 90 and progress == 0:
-            # Use stored zone_hashs (snapshot clears them at completion)
-            task_zones = data.active_zone_hashs.copy()
-            # Fall back to single zone hash
-            if not task_zones:
-                zone_hash = get_zone_hash(data)
-                if zone_hash:
-                    task_zones = [zone_hash]
-            for zh in task_zones:
+            for zh in data.active_zone_hashs:
                 if zh in data.area_names:
                     data.mow_history[zh] = datetime.now(timezone.utc)
                     _LOGGER.info(
                         "Mow completed in %s for %s",
                         data.area_names[zh], device_name,
                     )
-            # Clear stored zones after recording
             data.active_zone_hashs = []
         data.last_progress = progress
 

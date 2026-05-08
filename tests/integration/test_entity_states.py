@@ -428,6 +428,7 @@ class TestPerAreaMowHistorySensors:
 
     async def test_area_sensor_updates_on_mow_complete(self, hass: HomeAssistant):
         """Area sensor shows timestamp after mow completes in that zone."""
+        from unittest.mock import MagicMock
         client, captured = make_capturing_client()
         entry = await _setup_with_platforms(hass, client)
 
@@ -436,16 +437,16 @@ class TestPerAreaMowHistorySensors:
         data.create_area_sensors()
         await hass.async_block_till_done()
 
+        fake_device = MagicMock()
+        fake_device.location.work_zone = 111
+        client.get_device_by_name = MagicMock(return_value=fake_device)
+
         # Mowing at 95% in zone 111
-        snapshot = make_snapshot(area=95 << 16, online=True)
-        snapshot.raw.work.zone_hashs = [111]
-        await captured.on_state_changed(snapshot)
+        await captured.on_state_changed(make_snapshot(area=95 << 16, online=True))
         await hass.async_block_till_done()
 
         # Progress resets to 0 (mow complete)
-        snapshot = make_snapshot(area=0, online=True)
-        snapshot.raw.work.zone_hashs = [111]
-        await captured.on_state_changed(snapshot)
+        await captured.on_state_changed(make_snapshot(area=0, online=True))
         await hass.async_block_till_done()
 
         state = hass.states.get("sensor.luba_vslkjx_last_mow_front_lawn")

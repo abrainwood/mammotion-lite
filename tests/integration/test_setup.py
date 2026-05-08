@@ -473,3 +473,37 @@ class TestCloudRetry:
         # Integration should be loaded (not failed) - it retries in background
         assert result is True
         assert entry.state == ConfigEntryState.LOADED
+
+    async def test_login_failed_error_logs_reason_no_retry(
+        self, hass: HomeAssistant, caplog
+    ):
+        """LoginFailedError logs specific reason and does NOT schedule retry.
+
+        Auth failures (wrong password, account locked) don't self-heal,
+        so retrying is pointless and could lock the account further.
+        """
+        import logging
+        from pymammotion.transport.base import LoginFailedError
+
+        client = MagicMock()
+        client.login_and_initiate_cloud = AsyncMock(
+            side_effect=LoginFailedError("user@example.com", "Access denied")
+        )
+        client.stop = AsyncMock()
+        client.mower = MagicMock(return_value=None)
+
+        entry = _make_config_entry(hass)
+        entry.add_to_hass(hass)
+
+        with (
+            _patches(client),
+            caplog.at_level(logging.WARNING),
+        ):
+            result = await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+        # Should still load (graceful degradation) but log the auth error
+        assert result is True
+        assert "Access denied" in caplog.text
+        # Should NOT say "will retry" for auth errors
+        assert "will retry" not in caplog.text.lower()

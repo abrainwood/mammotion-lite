@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from . import _pymammotion_patch  # noqa: F401  # must run before pymammotion is used
+
 import asyncio
 import json
 import logging

@@ -25,7 +25,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pytest pytest-asyncio pytest-cov pytest-homeassistant-custom-component
-          pip install pymammotion==0.7.55 dbus_fast
+          pip install pymammotion==0.7.55 betterproto2==0.9.1 dbus_fast
 
       - name: Run tests with coverage
         run: |

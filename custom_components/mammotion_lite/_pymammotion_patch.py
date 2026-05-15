@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from pymammotion.http.http import MammotionHTTP
 
-_SPOOFED_APP_VERSION = "samsung SM_S918B exynos2200-Android 13,2.3.2.13"
+_SPOOFED_APP_VERSION = "samsung SM_T733 qcom-Android 14,2.3.2.13"
 _PATCH_FLAG = "_mammotion_lite_app_version_patched"
 
 

@@ -20,6 +20,7 @@ from pymammotion.mammotion.commands.mammotion_command import MammotionCommand
 from pymammotion.proto import RptAct, RptInfoType
 from pymammotion.transport.base import LoginFailedError
 
+from ._capture import CaptureRecorder
 from .const import (
     CONF_ACCOUNTNAME,
     CONF_DEVICE_IOT_ID,
@@ -33,6 +34,25 @@ from .event_handling import extract_event_code, get_event_label
 from .runtime_data import MammotionLiteData
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _record_safely(recorder, kind: str, payload, device_name: str) -> None:
+    """Record a callback payload to the capture trace, swallowing any failure.
+
+    Capture is best-effort instrumentation - a write failure must never break
+    the integration's normal callback handling.
+    """
+    if recorder is None:
+        return
+    try:
+        recorder.record(kind, payload)
+    except Exception as exc:
+        _LOGGER.warning(
+            "Capture recorder failed for %s on %s %s: %s: %s",
+            device_name, kind, type(payload).__name__,
+            type(exc).__name__, exc,
+        )
+
 
 # RPT_START config
 _REPORT_PERIOD_MS = 60_000
@@ -296,6 +316,7 @@ async def async_setup_entry(
         commands=commands,
         device_name=device_name,
         iot_id=iot_id,
+        recorder=CaptureRecorder.from_env(device_name),
     )
     entry.runtime_data = data
 
@@ -367,17 +388,20 @@ def _setup_subscriptions(
     client.setup_device_watchers(device_name)
 
     async def _on_properties(props) -> None:
+        _record_safely(data.recorder, "property", props, device_name)
         _LOGGER.debug("[PROPS] %s received", device_name)
         data.properties = props
         data.dispatch_sensor_update()
 
     async def _on_status(status) -> None:
+        _record_safely(data.recorder, "status", status, device_name)
         is_online = status.params.status.value == StatusType.CONNECTED
         _LOGGER.debug("[STATUS] %s: online=%s", device_name, is_online)
         data.online = is_online
         data.dispatch_update()
 
     async def _on_state_changed(snapshot) -> None:
+        _record_safely(data.recorder, "state_changed", snapshot, device_name)
         _LOGGER.debug("[STATE] %s: battery=%d", device_name, snapshot.battery_level)
         data.snapshot = snapshot
         data.online = snapshot.online
@@ -421,6 +445,8 @@ def _setup_subscriptions(
         data.dispatch_sensor_update()
 
     async def _on_event(event) -> None:
+        _record_safely(data.recorder, "event", event, device_name)
+
         code = extract_event_code(event)
         if not code:
             identifier = getattr(event.params, "identifier", None)

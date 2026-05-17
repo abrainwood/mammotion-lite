@@ -17,6 +17,7 @@ class MammotionLiteData:
     commands: Any  # MammotionCommand
     device_name: str
     iot_id: str
+    recorder: Any | None = None  # CaptureRecorder
     properties: Any | None = None  # ThingPropertiesMessage
     snapshot: Any | None = None  # DeviceSnapshot
     online: bool = False

@@ -131,12 +131,20 @@ class FakePropertiesParams:
 
 @dataclass
 class FakeThingPropertiesMessage:
-    """Mimics pymammotion.data.mqtt.properties.ThingPropertiesMessage."""
+    """Mimics pymammotion.data.mqtt.properties.ThingPropertiesMessage.
+
+    Real pymammotion ThingPropertiesMessage uses mashumaro DataClassDictMixin
+    which exposes a JSON-clean .to_dict(). Mirror that contract here.
+    """
 
     method: str = "thing.properties"
     id: str = "1"
     params: FakePropertiesParams = field(default_factory=FakePropertiesParams)
     version: str = "1.0"
+
+    def to_dict(self) -> dict[str, Any]:
+        from dataclasses import asdict
+        return asdict(self)
 
 
 try:
@@ -172,12 +180,27 @@ class FakeStatusParams:
 
 @dataclass
 class FakeThingStatusMessage:
-    """Mimics pymammotion.data.mqtt.status.ThingStatusMessage."""
+    """Mimics pymammotion.data.mqtt.status.ThingStatusMessage.
+
+    Real pymammotion ThingStatusMessage uses mashumaro and emits JSON-clean
+    primitives - the StatusType enum is serialised as its underlying value.
+    Mirror that here so capture serialisation matches production shape.
+    """
 
     method: str = "thing.status"
     id: str = "1"
     params: FakeStatusParams = field(default_factory=FakeStatusParams)
     version: str = "1.0"
+
+    def to_dict(self) -> dict[str, Any]:
+        import enum
+        from dataclasses import asdict
+
+        d = asdict(self)
+        status_value = self.params.status.value
+        if isinstance(status_value, enum.Enum):
+            d["params"]["status"]["value"] = status_value.value
+        return d
 
 
 @dataclass
@@ -197,12 +220,21 @@ class FakeEventParams:
 
 @dataclass
 class FakeThingEventMessage:
-    """Mimics pymammotion.data.mqtt.event.ThingEventMessage."""
+    """Mimics pymammotion.data.mqtt.event.ThingEventMessage.
+
+    Real pymammotion ThingEventMessage is a mashumaro DataClassDictMixin, so
+    it exposes .to_dict(). Mirror that so the capture recorder sees the same
+    serialisation contract in tests as it will in production.
+    """
 
     method: str = "thing.events"
     id: str = "1"
     params: FakeEventParams = field(default_factory=FakeEventParams)
     version: str = "1.0"
+
+    def to_dict(self) -> dict[str, Any]:
+        from dataclasses import asdict
+        return asdict(self)
 
 
 @dataclass
@@ -275,7 +307,11 @@ class FakeRaw:
 
 @dataclass
 class FakeDeviceSnapshot:
-    """Mimics pymammotion.state.device_state.DeviceSnapshot."""
+    """Mimics pymammotion.state.device_state.DeviceSnapshot.
+
+    Real DeviceSnapshot uses mashumaro and emits a JSON-clean dict - datetimes
+    are serialised as ISO 8601 strings. Mirror that here.
+    """
 
     sequence: int = 0
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -285,6 +321,13 @@ class FakeDeviceSnapshot:
     mowing_activity: str = "unknown(0)"
     blade_height: int = 0
     raw: FakeRaw = field(default_factory=FakeRaw)
+
+    def to_dict(self) -> dict[str, Any]:
+        from dataclasses import asdict
+
+        d = asdict(self)
+        d["timestamp"] = self.timestamp.isoformat()
+        return d
 
 
 @dataclass
